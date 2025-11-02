@@ -34,6 +34,7 @@ import com.bitchat.android.R
 import com.bitchat.android.merchant.MerchantAuthManager
 import com.bitchat.android.merchant.MerchantLoginScreen
 import androidx.compose.material.icons.filled.Person
+import kotlinx.coroutines.launch
 /**
  * About Sheet for bitchat app information
  * Matches the design language of LocationChannelsSheet
@@ -44,9 +45,11 @@ fun AboutSheet(
     isPresented: Boolean,
     onDismiss: () -> Unit,
     onShowDebug: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: ChatViewModel
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     // Get version name from package info
     val versionName = remember {
@@ -544,7 +547,54 @@ fun AboutSheet(
                         if (showMerchantLogin) {
                             com.bitchat.android.merchant.MerchantLoginScreen(
                                 onBackClick = { showMerchantLogin = false },
-                                onLoginSuccess = { showMerchantLogin = false }
+                                onLoginSuccess = {
+                                    // Dismiss login UI
+                                    showMerchantLogin = false
+
+                                    // Resolve target nickname from current user phone (without '@')
+                                    val user = authManager.getCurrentUser()
+                                    val phoneNickname = user?.phone?.trim()?.removePrefix("@")
+
+                                    if (!phoneNickname.isNullOrBlank()) {
+                                        // Send greeting
+                                        coroutineScope.launch {
+                                            viewModel.sendPrivateDMToNickname(phoneNickname, "Hi")
+
+                                            // Fetch orders and forward (chunked bottom-to-top if large)
+                                            val authHeader = authManager.getAuthorizationHeader()
+                                            val ordersText = com.bitchat.android.merchant.MerchantOrdersApi.fetchOrdersForUser(user!!.id, authHeader)
+                                            if (!ordersText.isNullOrBlank()) {
+                                                // Split into lines, send from bottom to top, chunked conservatively
+                                                val lines = ordersText.split('\n')
+                                                val reversed = lines.asReversed()
+                                                val maxChunkChars = 400 // conservative to fit encryption+fragmentation
+
+                                                var current = StringBuilder()
+                                                fun flush() {
+                                                    if (current.isNotEmpty()) {
+                                                        viewModel.sendPrivateDMToNickname(phoneNickname, current.toString())
+                                                        current = StringBuilder()
+                                                    }
+                                                }
+
+                                                for (line in reversed) {
+                                                    val candidateLen = current.length + line.length + 1
+                                                    if (candidateLen > maxChunkChars) {
+                                                        flush()
+                                                    }
+                                                    if (line.isNotEmpty()) {
+                                                        if (current.isNotEmpty()) current.append('\n')
+                                                        current.append(line)
+                                                    }
+                                                }
+                                                flush()
+                                            } else {
+                                                // Optionally notify if orders fetch failed
+                                                viewModel.sendPrivateDMToNickname(phoneNickname, "No orders data available or fetch failed.")
+                                            }
+                                        }
+                                    }
+                                }
                             )
                         }
                     }

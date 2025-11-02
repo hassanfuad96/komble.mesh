@@ -498,6 +498,51 @@ class ChatViewModel(
     fun getPeerIDForNickname(nickname: String): String? {
         return meshService.getPeerNicknames().entries.find { it.value == nickname }?.key
     }
+
+    /**
+     * Send a private DM to a user by nickname, adding local echo and routing via MessageRouter.
+     */
+    fun sendPrivateDMToNickname(nickname: String, content: String) {
+        try {
+            val peerID = getPeerIDForNickname(nickname)
+            if (peerID == null) {
+                // System message feedback when target not found
+                messageManager.addMessage(
+                    BitchatMessage(
+                        sender = "system",
+                        content = "user '$nickname' not found",
+                        timestamp = java.util.Date(),
+                        isRelay = false
+                    )
+                )
+                return
+            }
+
+            // Ensure canonical ID if needed (Nostr/temp alias resolution)
+            val canonical = com.bitchat.android.services.ConversationAliasResolver.resolveCanonicalPeerID(
+                selectedPeerID = peerID,
+                connectedPeers = state.getConnectedPeersValue(),
+                meshNoiseKeyForPeer = { pid -> meshService.getPeerInfo(pid)?.noisePublicKey },
+                meshHasPeer = { pid -> meshService.getPeerInfo(pid)?.isConnected == true },
+                nostrPubHexForAlias = { alias -> com.bitchat.android.nostr.GeohashAliasRegistry.get(alias) },
+                findNoiseKeyForNostr = { key -> com.bitchat.android.favorites.FavoritesPersistenceService.shared.findNoiseKey(key) }
+            ) ?: peerID
+
+            val recipientNickname = meshService.getPeerNicknames()[canonical]
+            privateChatManager.sendPrivateMessage(
+                content,
+                canonical,
+                recipientNickname,
+                state.getNicknameValue(),
+                meshService.myPeerID
+            ) { messageContent, toPeerID, recipientNicknameParam, messageId ->
+                val router = com.bitchat.android.services.MessageRouter.getInstance(getApplication(), meshService)
+                router.sendPrivate(messageContent, toPeerID, recipientNicknameParam, messageId)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "sendPrivateDMToNickname failed: ${e.message}")
+        }
+    }
     
     fun toggleFavorite(peerID: String) {
         Log.d("ChatViewModel", "toggleFavorite called for peerID: $peerID")
