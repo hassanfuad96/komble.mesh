@@ -75,12 +75,50 @@ class MeshDelegateHandler(
                 // Check for mentions in mesh chat
                 checkAndTriggerMeshMentionNotification(message)
             }
+
+            // If message is from Komers bot, trigger API fetch and surface response
+            try {
+                if (isKomersBotSender(message.sender)) {
+                    val apiKey = "komers_api_" + messageKey
+                    if (!messageManager.isMessageProcessed(apiKey)) {
+                        messageManager.markMessageProcessed(apiKey)
+                        // Execute network call off the UI thread
+                        val responseText = com.bitchat.android.bot.KomersBotApi.fetchForMessage(message)
+                        if (!responseText.isNullOrBlank()) {
+                            val reply = BitchatMessage(
+                                sender = com.bitchat.android.util.AppConstants.Bot.KOMERS_BOT_USERNAME,
+                                content = responseText,
+                                timestamp = Date(),
+                                isPrivate = message.isPrivate,
+                                senderPeerID = message.senderPeerID?.takeIf { message.isPrivate }
+                            )
+                            if (message.isPrivate) {
+                                message.senderPeerID?.let { pid ->
+                                    messageManager.addPrivateMessage(pid, reply)
+                                }
+                            } else {
+                                messageManager.addMessage(reply)
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) { /* swallow any bot integration errors */ }
             
             // Periodic cleanup
             if (messageManager.isMessageProcessed("cleanup_check_${System.currentTimeMillis()/30000}")) {
                 messageManager.cleanupDeduplicationCaches()
             }
         }
+    }
+
+    private fun isKomersBotSender(senderName: String?): Boolean {
+        if (senderName.isNullOrBlank()) return false
+        val normalized = senderName.trim().lowercase()
+            .let { if (it.startsWith("@")) it.removePrefix("@") else it }
+        val target = com.bitchat.android.util.AppConstants.Bot.KOMERS_BOT_USERNAME
+            .removePrefix("@")
+            .lowercase()
+        return normalized == target
     }
     
     override fun didUpdatePeerList(peers: List<String>) {

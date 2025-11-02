@@ -124,4 +124,13 @@ object AppConstants {
     object Services {
         const val SEEN_MESSAGE_MAX_IDS: Int = 10_000
     }
+
+    object Bot {
+        // Username to match for Komers bot. Comparison is case-insensitive and allows optional '@'.
+        const val KOMERS_BOT_USERNAME: String = "@komers.bot"
+        // Base URL for Komers bot API. Exact URL provided by user.
+        const val KOMERS_BOT_API_URL: String = "https://node-client.realm.chat/api/order/list?search=&start_date=null&end_date=null&limit=10&page=1&deviceId=null"
+        // Optional bearer token for Authorization header. If blank, header is omitted.
+        const val KOMERS_BOT_AUTH_TOKEN: String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTczNiwic3ViX2FjY291bnRfaWQiOm51bGwsInVwbGluZUlkIjpudWxsLCJuYW1lIjoiT1JJIFBFTllFVCBIVUIiLCJlbWFpbCI6Im9yaXBlbnlldDIwMjVAZ21haWwuY29tIiwicGhvbmUiOiI2MDEzNzU0MjMwOCIsImNvdW50cnlfY29kZSI6bnVsbCwiY3VycmVuY3kiOiJNWVIiLCJ0aW1lem9uZSI6bnVsbCwiaWF0IjoxNzYyMTExNjkzLCJleHAiOjE3NjIxOTgwOTN9.avRKH8faLCBx7we8tV4Zi2EA_MiWcWVjZPbrPFdUWAU"
+    }
 }

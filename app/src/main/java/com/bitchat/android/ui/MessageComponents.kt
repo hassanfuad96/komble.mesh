@@ -149,6 +149,10 @@ fun MessageItem(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    // Determine if this message was sent by the current user
+    val isSelf = message.senderPeerID == meshService.myPeerID ||
+            message.sender == currentUserNickname ||
+            message.sender.startsWith("$currentUserNickname#")
     
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -157,31 +161,52 @@ fun MessageItem(
         Box(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.Top
             ) {
                 // Provide a small end padding for own private messages so overlay doesn't cover text
-                val endPad = if (message.isPrivate && message.sender == currentUserNickname) 16.dp else 0.dp
-                // Create a custom layout that combines selectable text with clickable nickname areas
-                MessageTextWithClickableNicknames(
-                    message = message,
-                    messages = messages,
-                    currentUserNickname = currentUserNickname,
-                    meshService = meshService,
-                    colorScheme = colorScheme,
-                    timeFormatter = timeFormatter,
-                    onNicknameClick = onNicknameClick,
-                    onMessageLongPress = onMessageLongPress,
-                    onCancelTransfer = onCancelTransfer,
-                    onImageClick = onImageClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = endPad)
-                )
+                val endPad = if (message.isPrivate && isSelf) 16.dp else 0.dp
+
+                if (!isSelf) {
+                    // Left side (others)
+                    MessageTextWithClickableNicknames(
+                        message = message,
+                        messages = messages,
+                        currentUserNickname = currentUserNickname,
+                        meshService = meshService,
+                        colorScheme = colorScheme,
+                        timeFormatter = timeFormatter,
+                        onNicknameClick = onNicknameClick,
+                        onMessageLongPress = onMessageLongPress,
+                        onCancelTransfer = onCancelTransfer,
+                        onImageClick = onImageClick,
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .padding(end = endPad)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                } else {
+                    // Right side (self)
+                    Spacer(modifier = Modifier.weight(1f))
+                    MessageTextWithClickableNicknames(
+                        message = message,
+                        messages = messages,
+                        currentUserNickname = currentUserNickname,
+                        meshService = meshService,
+                        colorScheme = colorScheme,
+                        timeFormatter = timeFormatter,
+                        onNicknameClick = onNicknameClick,
+                        onMessageLongPress = onMessageLongPress,
+                        onCancelTransfer = onCancelTransfer,
+                        onImageClick = onImageClick,
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .padding(end = endPad)
+                    )
+                }
             }
 
             // Delivery status for private messages (overlay, non-displacing)
-            if (message.isPrivate && message.sender == currentUserNickname) {
+            if (message.isPrivate && isSelf) {
                 message.deliveryStatus?.let { status ->
                     Box(
                         modifier = Modifier
@@ -193,7 +218,7 @@ fun MessageItem(
                 }
             }
         }
-        
+
         // Link previews removed; links are now highlighted inline and clickable within the message text
     }
 }

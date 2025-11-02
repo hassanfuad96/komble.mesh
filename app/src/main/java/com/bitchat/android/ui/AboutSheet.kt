@@ -31,6 +31,9 @@ import com.bitchat.android.nostr.PoWPreferenceManager
 import com.bitchat.android.ui.debug.DebugSettingsSheet
 import androidx.compose.ui.res.stringResource
 import com.bitchat.android.R
+import com.bitchat.android.merchant.MerchantAuthManager
+import com.bitchat.android.merchant.MerchantLoginScreen
+import androidx.compose.material.icons.filled.Person
 /**
  * About Sheet for bitchat app information
  * Matches the design language of LocationChannelsSheet
@@ -384,6 +387,7 @@ fun AboutSheet(
                     item(key = "network_section") {
                         val torMode = remember { mutableStateOf(com.bitchat.android.net.TorPreferenceManager.get(context)) }
                         val torStatus by com.bitchat.android.net.TorManager.statusFlow.collectAsState()
+
                         Text(
                             text = stringResource(R.string.about_network),
                             style = MaterialTheme.typography.labelLarge,
@@ -392,7 +396,11 @@ fun AboutSheet(
                                 .padding(horizontal = 24.dp)
                                 .padding(top = 24.dp, bottom = 8.dp)
                         )
-                        Column(modifier = Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                        Column(
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -405,6 +413,7 @@ fun AboutSheet(
                                     },
                                     label = { Text("tor off", fontFamily = FontFamily.Monospace) }
                                 )
+
                                 FilterChip(
                                     selected = torMode.value == com.bitchat.android.net.TorMode.ON,
                                     onClick = {
@@ -429,14 +438,16 @@ fun AboutSheet(
                                     }
                                 )
                             }
+
                             Text(
                                 text = stringResource(R.string.about_tor_route),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
+
                             if (torMode.value == com.bitchat.android.net.TorMode.ON) {
                                 val statusText = if (torStatus.running) "Running" else "Stopped"
-                                // Debug status (temporary)
+
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
                                     color = colorScheme.surfaceVariant.copy(alpha = 0.25f),
@@ -451,6 +462,7 @@ fun AboutSheet(
                                             style = MaterialTheme.typography.bodySmall,
                                             color = colorScheme.onSurface.copy(alpha = 0.75f)
                                         )
+
                                         val lastLog = torStatus.lastLogLine
                                         if (lastLog.isNotEmpty()) {
                                             Text(
@@ -462,6 +474,78 @@ fun AboutSheet(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Merchant Login Section (placed after Network section)
+                    item(key = "merchant_section") {
+                        val authManager = remember { com.bitchat.android.merchant.MerchantAuthManager.getInstance(context) }
+                        val isLoggedIn by authManager.isLoggedIn.collectAsState()
+                        val currentUser by authManager.currentUser.collectAsState()
+                        var showMerchantLogin by remember { mutableStateOf(false) }
+
+                        Text(
+                            text = "Merchant Access",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .padding(top = 24.dp, bottom = 8.dp)
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Merchant Access",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = if (isLoggedIn && currentUser != null) "Merchant: ${currentUser!!.name}" else "Merchant Login",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (isLoggedIn) "Access merchant features and services" else "Login to access merchant features",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                if (isLoggedIn) {
+                                    OutlinedButton(
+                                        onClick = { authManager.logout() },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Logout", fontFamily = FontFamily.Monospace)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = { showMerchantLogin = true },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Login as Merchant", fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (showMerchantLogin) {
+                            com.bitchat.android.merchant.MerchantLoginScreen(
+                                onBackClick = { showMerchantLogin = false },
+                                onLoginSuccess = { showMerchantLogin = false }
+                            )
                         }
                     }
 

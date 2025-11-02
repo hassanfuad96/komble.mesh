@@ -31,6 +31,7 @@ import com.bitchat.android.core.ui.utils.singleOrTripleClickable
 import com.bitchat.android.geohash.LocationChannelManager.PermissionState
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
+import com.bitchat.android.merchant.MerchantBadge
 
 /**
  * Header components for ChatScreen
@@ -581,6 +582,11 @@ private fun MainHeader(
                     tint = Color(0xFFFF9500)
                 )
             }
+
+            // Merchant badge
+            MerchantBadge(
+                modifier = Modifier.padding(horizontal = 2.dp)
+            )
 
             // Location channels button (matching iOS implementation) and bookmark grouped tightly
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
