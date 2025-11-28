@@ -19,6 +19,7 @@
     
     <!-- Notification permissions -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     
     <!-- Microphone for voice notes -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -60,6 +61,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- Read-only ContentProvider exposing orders and order_items -->
+        <provider
+            android:name=".provider.OrdersProvider"
+            android:authorities="com.komble.mesh.orders"
+            android:exported="true"
+            android:grantUriPermissions="true" />
         <activity
             android:name=".ui.GeohashPickerActivity"
             android:exported="false"
@@ -77,5 +84,30 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".merchant.MerchantTerminalActivity"
+            android:exported="true"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Add a launcher entry so users can open the internal terminal page -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".merchant.MerchantPrintFailuresActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".merchant.MerchantPrintSuccessActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize" />
+        <service
+            android:name=".merchant.MerchantOrdersForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

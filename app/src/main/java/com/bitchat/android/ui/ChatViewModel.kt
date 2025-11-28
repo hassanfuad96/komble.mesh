@@ -29,6 +29,7 @@ class ChatViewModel(
     val meshService: BluetoothMeshService
 ) : AndroidViewModel(application), BluetoothMeshDelegate {
     private val debugManager by lazy { try { com.bitchat.android.ui.debug.DebugSettingsManager.getInstance() } catch (e: Exception) { null } }
+    private val appContext = application.applicationContext
 
     companion object {
         private const val TAG = "ChatViewModel"
@@ -54,7 +55,7 @@ class ChatViewModel(
     private val messageTransferMap = mutableMapOf<String, String>()
 
     // Specialized managers
-    private val dataManager = DataManager(application.applicationContext)
+    private val dataManager = DataManager(appContext)
     private val messageManager = MessageManager(state)
     private val channelManager = ChannelManager(state, messageManager, dataManager, viewModelScope)
 
@@ -68,8 +69,8 @@ class ChatViewModel(
     val privateChatManager = PrivateChatManager(state, messageManager, dataManager, noiseSessionDelegate)
     private val commandProcessor = CommandProcessor(state, messageManager, channelManager, privateChatManager)
     private val notificationManager = NotificationManager(
-      application.applicationContext,
-      NotificationManagerCompat.from(application.applicationContext),
+      appContext,
+      NotificationManagerCompat.from(appContext),
       NotificationIntervalManager()
     )
 
@@ -84,7 +85,7 @@ class ChatViewModel(
         privateChatManager = privateChatManager,
         notificationManager = notificationManager,
         coroutineScope = viewModelScope,
-        onHapticFeedback = { ChatViewModelUtils.triggerHapticFeedback(application.applicationContext) },
+        onHapticFeedback = { ChatViewModelUtils.triggerHapticFeedback(appContext) },
         getMyPeerID = { meshService.myPeerID },
         getMeshService = { meshService }
     )
@@ -739,6 +740,12 @@ class ChatViewModel(
     
     override fun didUpdatePeerList(peers: List<String>) {
         meshDelegateHandler.didUpdatePeerList(peers)
+        // Flush merchant orders outbox to @phone when peers update
+        try {
+            com.bitchat.android.merchant.OrdersOutboxSender.flush(appContext, meshService)
+        } catch (_: Exception) {
+            // Ignore flush errors
+        }
     }
     
     override fun didReceiveChannelLeave(channel: String, fromPeer: String) {

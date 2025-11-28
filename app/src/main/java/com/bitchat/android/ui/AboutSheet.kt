@@ -35,6 +35,23 @@ import com.bitchat.android.merchant.MerchantAuthManager
 import com.bitchat.android.merchant.MerchantLoginScreen
 import androidx.compose.material.icons.filled.Person
 import kotlinx.coroutines.launch
+import com.bitchat.android.printer.PrinterDiscoveryManager
+import com.bitchat.android.printer.PrinterSettingsManager
+import com.bitchat.android.printer.SavedPrinter
+import com.bitchat.android.printer.EscPosPrinterClient
+import com.bitchat.android.printer.JetDirectTextPrinterClient
+import com.bitchat.android.printer.EscPosUtils
+import com.bitchat.android.printer.IppPrintClient
+import com.bitchat.android.db.AppDatabaseHelper
+import com.bitchat.android.db.PrintLog
+import com.bitchat.android.mesh.BluetoothPermissionManager
+import com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection
+import com.dantsu.escposprinter.connection.bluetooth.BluetoothPrintersConnections
+import com.dantsu.escposprinter.EscPosPrinter
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
+import com.bitchat.android.merchant.CategoriesApiService
 /**
  * About Sheet for bitchat app information
  * Matches the design language of LocationChannelsSheet
@@ -65,7 +82,11 @@ fun AboutSheet(
     // Bottom sheet state
 
     val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
+        skipPartiallyExpanded = true,
+        confirmValueChange = { newValue ->
+            // Prevent dismiss via swipe; only close via Close button
+            newValue != SheetValue.Hidden
+        }
     )
 
     val lazyListState = rememberLazyListState()
@@ -86,7 +107,7 @@ fun AboutSheet(
     if (isPresented) {
         ModalBottomSheet(
             modifier = modifier.statusBarsPadding(),
-            onDismissRequest = onDismiss,
+            onDismissRequest = {}, // Do not auto-dismiss; use explicit Close button
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.background,
             dragHandle = null
@@ -539,6 +560,721 @@ fun AboutSheet(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text("Login as Merchant", fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Printer Setup Section (visible after merchant login)
+                    item(key = "printer_section") {
+                        val isLoggedIn by authManager.isLoggedIn.collectAsState()
+                        val context = LocalContext.current
+                        val discoveryManager = remember { PrinterDiscoveryManager(context) }
+                        val printerSettings = remember { PrinterSettingsManager(context) }
+                        val savedPrinters = remember { mutableStateListOf<SavedPrinter>().apply { addAll(printerSettings.getPrinters()) } }
+                        var defaultPrinterId by remember { mutableStateOf(printerSettings.getDefaultPrinter()?.id) }
+                        val discoveredPrinters = remember { mutableStateListOf<com.bitchat.android.printer.DiscoveredPrinter>() }
+                        var scanning by remember { mutableStateOf(false) }
+                        var manualHost by remember { mutableStateOf("") }
+                        var manualPortText by remember { mutableStateOf("9100") }
+                        var isTesting by remember { mutableStateOf(false) }
+                        val coroutineScope = rememberCoroutineScope()
+                        var lastTestMessage by remember { mutableStateOf<String?>(null) }
+                        var showAdvanced by remember { mutableStateOf(false) }
+                        // Bluetooth printers state
+                        var btPrinters by remember { mutableStateOf<List<BluetoothConnection>>(emptyList()) }
+                        var selectedBtPrinter by remember { mutableStateOf<BluetoothConnection?>(null) }
+                        // Recent logs from polling-only pipeline
+                        val recentLogs = remember { mutableStateListOf<PrintLog>() }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                val all = AppDatabaseHelper(context).queryRecentLogs(limit = 100)
+                                val pollOnly = all.filter { it.type == "poll_print" || it.type == "poll_fetch" }
+                                recentLogs.clear()
+                                recentLogs.addAll(pollOnly)
+                                delay(2000)
+                            }
+                        }
+                        val defaultPrinter = savedPrinters.firstOrNull { it.id == defaultPrinterId }
+                        var paperWidth by remember { mutableStateOf((defaultPrinter?.paperWidthMm ?: 80).toString()) }
+                        var dotsPerMm by remember { mutableStateOf((defaultPrinter?.dotsPerMm ?: 8).toString()) }
+                        var initHex by remember { mutableStateOf(defaultPrinter?.initHex ?: "1B,40") }
+                        var cutterHex by remember { mutableStateOf(defaultPrinter?.cutterHex ?: "1D,56,42,00") }
+                        var drawerHex by remember { mutableStateOf(defaultPrinter?.drawerHex ?: "1B,70,00,19,FA") }
+                        var newLabel by remember { mutableStateOf("") }
+
+                        DisposableEffect(Unit) {
+                            onDispose { discoveryManager.stopDiscovery() }
+                        }
+
+                        // Show Printer Setup for all users (merchant or not)
+                        run {
+                            Text(
+                                text = "Printer Setup",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .padding(top = 12.dp, bottom = 8.dp)
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Saved printers card
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = if (savedPrinters.isNotEmpty()) "Saved Printers" else "No Printer Configured",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        if (savedPrinters.isNotEmpty()) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(
+                                                    enabled = !isTesting,
+                                                    onClick = {
+                                                        isTesting = true
+                                                        coroutineScope.launch {
+                                                            var okCount = 0
+                                                            val total = savedPrinters.size
+                                                            val db = com.bitchat.android.db.AppDatabaseHelper(context)
+                                                            for (sp in savedPrinters) {
+                                                                val ok = EscPosPrinterClient().sendTestReceipt(
+                                                                    host = sp.host,
+                                                                    port = sp.port,
+                                                                    initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex),
+                                                                    cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex)
+                                                                )
+                                                                db.insertPrintLog(
+                                                                    PrintLog(
+                                                                        printerId = sp.id,
+                                                                        host = sp.host,
+                                                                        port = sp.port,
+                                                                        label = sp.label,
+                                                                        type = "escpos_test",
+                                                                        success = ok
+                                                                    )
+                                                                )
+                                                                if (ok) okCount++
+                                                            }
+                                                            isTesting = false
+                                                            lastTestMessage = "ESC/POS test (all): $okCount/$total succeeded"
+                                                        }
+                                                    }
+                                                ) { Text(if (isTesting) "Testing…" else "ESC/POS Test (All)", fontFamily = FontFamily.Monospace) }
+                                                OutlinedButton(
+                                                    enabled = !isTesting,
+                                                    onClick = {
+                                                        isTesting = true
+                                                        coroutineScope.launch {
+                                                            var okCount = 0
+                                                            val total = savedPrinters.size
+                                                            val db = com.bitchat.android.db.AppDatabaseHelper(context)
+                                                            for (sp in savedPrinters) {
+                                                                val ok = try {
+                                                                    withTimeout(8000) {
+                                                                        if (sp.port == 631) {
+                                                                            IppPrintClient().sendTextPage(sp.host, sp.port)
+                                                                        } else {
+                                                                            JetDirectTextPrinterClient().sendTextPage(
+                                                                                host = sp.host,
+                                                                                port = sp.port,
+                                                                                text = "Bitchat Test Page\r\nMerchant Connected\r\nTime: ${System.currentTimeMillis()}\r\n"
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                } catch (_: TimeoutCancellationException) { false }
+                                                                db.insertPrintLog(
+                                                                    PrintLog(
+                                                                        printerId = sp.id,
+                                                                        host = sp.host,
+                                                                        port = sp.port,
+                                                                        label = sp.label,
+                                                                        type = if (sp.port == 631) "ipp_text" else "text_test",
+                                                                        success = ok
+                                                                    )
+                                                                )
+                                                                if (ok) okCount++
+                                                            }
+                                                            isTesting = false
+                                                            lastTestMessage = "Text test (all): $okCount/$total succeeded"
+                                                        }
+                                                    }
+                                                ) { Text(if (isTesting) "Testing…" else "Text Test (All)", fontFamily = FontFamily.Monospace) }
+                                            }
+                                        }
+                                        if (savedPrinters.isNotEmpty()) {
+                                            savedPrinters.forEach { sp ->
+                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Text(
+                                                        text = "${sp.label?.let { "$it — " } ?: ""}${sp.name ?: "ESC/POS"} — ${sp.host}:${sp.port}" + if (sp.id == defaultPrinterId) " • Default" else "",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                                    )
+                                                    // Quick summary of selected categories for this printer
+                                                    val hasAll = sp.selectedCategoryIds?.contains(0) == true
+                                                    val countSelected = sp.selectedCategoryIds?.filter { it != 0 }?.size ?: 0
+                                                    val includeUncatSummary = sp.uncategorizedSelected == true
+                                                    val summaryText = when {
+                                                        hasAll -> "Categories: All"
+                                                        countSelected == 0 && !includeUncatSummary -> "Categories: None"
+                                                        else -> {
+                                                            val parts = mutableListOf<String>()
+                                                            if (countSelected > 0) parts.add("$countSelected selected")
+                                                            if (includeUncatSummary) parts.add("Uncategorized")
+                                                            "Categories: " + parts.joinToString(", ")
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = summaryText,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                    )
+                                                    var labelText by remember(sp.id) { mutableStateOf(sp.label ?: "") }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        OutlinedTextField(
+                                                            value = labelText,
+                                                            onValueChange = { labelText = it.take(24) },
+                                                            label = { Text("Label") },
+                                                            singleLine = true,
+                                                            modifier = Modifier.weight(1f)
+                                                        )
+                                                        OutlinedButton(onClick = {
+                                                            val updated = sp.copy(label = labelText)
+                                                            printerSettings.addPrinter(updated)
+                                                            val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                            if (idx >= 0) savedPrinters[idx] = updated
+                                                            if (sp.id == defaultPrinterId) {
+                                                                // keep advanced fields aligned with default
+                                                                paperWidth = (updated.paperWidthMm ?: 80).toString()
+                                                                dotsPerMm = (updated.dotsPerMm ?: 8).toString()
+                                                                initHex = updated.initHex ?: "1B,40"
+                                                                cutterHex = updated.cutterHex ?: "1D,56,42,00"
+                                                                drawerHex = updated.drawerHex ?: "1B,70,00,19,FA"
+                                                            }
+                                                        }) { Text("Save Label", fontFamily = FontFamily.Monospace) }
+                                                    }
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Button(
+                                                        enabled = !isTesting,
+                                                        onClick = {
+                                                            isTesting = true
+                                                                coroutineScope.launch {
+                                                                    val ok = EscPosPrinterClient().sendTestReceipt(
+                                                                        host = sp.host,
+                                                                        port = sp.port,
+                                                                        initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex),
+                                                                        cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex)
+                                                                    )
+                                                                    isTesting = false
+                                                                    lastTestMessage = if (ok) "ESC/POS test succeeded" else "ESC/POS test failed"
+                                                    com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                                                                        PrintLog(
+                                                                            printerId = sp.id,
+                                                                            host = sp.host,
+                                                                            port = sp.port,
+                                                                            label = sp.label,
+                                                                            type = "escpos_test",
+                                                                            success = ok
+                                                                        )
+                                                                    )
+                                                                }
+                                                            }
+                                                        ) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
+                                                        OutlinedButton(
+                                                            enabled = !isTesting,
+                                                            onClick = {
+                                                                isTesting = true
+                                                                coroutineScope.launch {
+                                                                    val ok = try {
+                                                                        withTimeout(8000) {
+                                                                            if (sp.port == 631) {
+                                                                                IppPrintClient().sendTextPage(
+                                                                                    host = sp.host,
+                                                                                    port = sp.port
+                                                                                )
+                                                                            } else {
+                                                                                JetDirectTextPrinterClient().sendTextPage(
+                                                                                    host = sp.host,
+                                                                                    port = sp.port,
+                                                                                    text = "Bitchat Test Page\r\nMerchant Connected\r\nTime: ${System.currentTimeMillis()}\r\n"
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    } catch (_: TimeoutCancellationException) {
+                                                                        false
+                                                                    }
+                                                                    isTesting = false
+                                                                    lastTestMessage = if (ok) {
+                                                                        if (sp.port == 631) "Text print succeeded (IPP)" else "Text print succeeded (JetDirect)"
+                                                                    } else "Text print failed"
+                                                    com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                                                                        PrintLog(
+                                                                            printerId = sp.id,
+                                                                            host = sp.host,
+                                                                            port = sp.port,
+                                                                            label = sp.label,
+                                                                            type = if (sp.port == 631) "ipp_text" else "text_test",
+                                                                            success = ok
+                                                                        )
+                                                                    )
+                                                                }
+                                                            }
+                                                        ) { Text(if (isTesting) "Testing…" else "Text Test", fontFamily = FontFamily.Monospace) }
+                                                        OutlinedButton(
+                                                            onClick = {
+                                                                printerSettings.removePrinter(sp.id)
+                                                                savedPrinters.removeAll { it.id == sp.id }
+                                                                defaultPrinterId = printerSettings.getDefaultPrinter()?.id
+                                                            }
+                                                        ) { Text("Delete", fontFamily = FontFamily.Monospace) }
+                                                        if (sp.id != defaultPrinterId) {
+                                                            OutlinedButton(
+                                                                onClick = {
+                                                                    printerSettings.setDefaultPrinterId(sp.id)
+                                                                    defaultPrinterId = sp.id
+                                                                    // Update advanced defaults to this printer
+                                                                    paperWidth = (sp.paperWidthMm ?: 80).toString()
+                                                                    dotsPerMm = (sp.dotsPerMm ?: 8).toString()
+                                                                    initHex = sp.initHex ?: "1B,40"
+                                                                    cutterHex = sp.cutterHex ?: "1D,56,42,00"
+                                                                    drawerHex = sp.drawerHex ?: "1B,70,00,19,FA"
+                                                                }
+                                                            ) { Text("Set Default", fontFamily = FontFamily.Monospace) }
+                                                        }
+                                                    }
+                                                    // Per-printer categories UI
+                                                    var showCat by remember(sp.id) { mutableStateOf(false) }
+                                                    var categories by remember(sp.id) { mutableStateOf<List<CategoriesApiService.Category>>(emptyList()) }
+                                                    var catLoading by remember(sp.id) { mutableStateOf(false) }
+                                                    var selectedIds by remember(sp.id) { mutableStateOf(sp.selectedCategoryIds ?: emptyList()) }
+                                                    var includeUncat by remember(sp.id) { mutableStateOf(sp.uncategorizedSelected == true) }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        OutlinedButton(onClick = {
+                                                            showCat = !showCat
+                                                            if (showCat && categories.isEmpty() && !catLoading) {
+                                                                catLoading = true
+                                                                coroutineScope.launch {
+                                                                    val auth = MerchantAuthManager.getInstance(context).getAuthorizationHeader()
+                                                                    val list = CategoriesApiService.fetchCategories(auth)
+                                                                    categories = list
+                                                                    catLoading = false
+                                                                }
+                                                            }
+                                                        }) { Text(if (showCat) "Hide Categories" else "Edit Categories", fontFamily = FontFamily.Monospace) }
+                                                        if (showCat) {
+                                                            OutlinedButton(onClick = {
+                                                                printerSettings.setPrinterCategories(sp.id, selectedIds, includeUncat)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                val updated = sp.copy(selectedCategoryIds = selectedIds, uncategorizedSelected = includeUncat)
+                                                                if (idx >= 0) savedPrinters[idx] = updated
+                                                                lastTestMessage = "Saved categories for ${sp.label ?: sp.name ?: "ESC/POS"}"
+                                                            }) { Text("Save Categories", fontFamily = FontFamily.Monospace) }
+                                                        }
+                                                    }
+                                                    if (showCat) {
+                                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            if (catLoading) {
+                                                                Text("Loading categories…", fontFamily = FontFamily.Monospace)
+                                                            } else {
+                                                                // All Categories toggle
+                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    val isAll = selectedIds.contains(0)
+                                                                    Checkbox(checked = isAll, onCheckedChange = { checked ->
+                                                                        selectedIds = if (checked) listOf(0) else emptyList()
+                                                                    })
+                                                                    Text("All Categories", fontFamily = FontFamily.Monospace)
+                                                                }
+                                                                // Uncategorized toggle
+                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Checkbox(checked = includeUncat, onCheckedChange = { includeUncat = it })
+                                                                    Text("Include Uncategorized", fontFamily = FontFamily.Monospace)
+                                                                }
+                                                                // Specific categories
+                                                                val apiCats = categories.filter { it.id != null }
+                                                                apiCats.forEach { cat ->
+                                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                        val checked = selectedIds.contains(cat.id!!)
+                                                                        Checkbox(checked = checked && !selectedIds.contains(0), onCheckedChange = { sel ->
+                                                                            if (selectedIds.contains(0)) {
+                                                                                // If All is selected, unselect it when choosing specifics
+                                                                                selectedIds = emptyList()
+                                                                            }
+                                                                            selectedIds = if (sel) (selectedIds + cat.id!!).distinct() else selectedIds.filter { it != cat.id!! }
+                                                                        })
+                                                                        Text(cat.name, fontFamily = FontFamily.Monospace)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            lastTestMessage?.let { msg ->
+                                                Text(
+                                                    text = msg,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Scan controls
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        enabled = !scanning,
+                                        onClick = {
+                                            scanning = true
+                                            discoveredPrinters.clear()
+                                            discoveryManager.startDiscovery(
+                                                onFound = { p ->
+                                                    // De-duplicate by host:port
+                                                    if (discoveredPrinters.none { it.host == p.host && it.port == p.port }) {
+                                                        discoveredPrinters.add(p)
+                                                    }
+                                                },
+                                                onError = { err ->
+                                                    viewModel.sendPrivateDMToNickname(
+                                                        nickname = viewModel.nickname.value ?: "",
+                                                        content = "Printer discovery error: $err"
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    ) { Text("Scan Wi‑Fi Printers", fontFamily = FontFamily.Monospace) }
+                                    OutlinedButton(
+                                        enabled = scanning,
+                                        onClick = {
+                                            scanning = false
+                                            discoveryManager.stopDiscovery()
+                                        }
+                                    ) { Text("Stop Scan", fontFamily = FontFamily.Monospace) }
+                                }
+
+                                // Discovered list
+                                if (discoveredPrinters.isNotEmpty()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        discoveredPrinters.take(6).forEach { p ->
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(12.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text(p.name, style = MaterialTheme.typography.bodyMedium)
+                                                        Text("${p.host}:${p.port} • ${p.serviceType}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                                    }
+                                                    OutlinedButton(onClick = {
+                                                        val sp = SavedPrinter(
+                                                            name = p.name,
+                                                            host = p.host,
+                                                            port = if (p.port > 0) p.port else 9100,
+                                                            label = newLabel.ifBlank { null },
+                                                            paperWidthMm = paperWidth.toIntOrNull() ?: 80,
+                                                            dotsPerMm = dotsPerMm.toIntOrNull() ?: 8,
+                                                            initHex = initHex,
+                                                            cutterHex = cutterHex,
+                                                            drawerHex = drawerHex
+                                                        )
+                                                        printerSettings.addPrinter(sp, setDefault = savedPrinters.isEmpty())
+                                                        // reflect in UI state
+                                                        val idx = savedPrinters.indexOfFirst { it.host == sp.host && it.port == sp.port }
+                                                        if (idx >= 0) savedPrinters[idx] = sp else savedPrinters.add(sp)
+                                                        defaultPrinterId = printerSettings.getDefaultPrinter()?.id
+                                                    }) { Text("Connect", fontFamily = FontFamily.Monospace) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Manual entry
+                                Text(
+                                    text = "Manual IP/Port",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedTextField(
+                                        value = manualHost,
+                                        onValueChange = { manualHost = it },
+                                        label = { Text("IP / Hostname") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = manualPortText,
+                                        onValueChange = { manualPortText = it.filter { ch -> ch.isDigit() }.take(5) },
+                                        label = { Text("Port") },
+                                        singleLine = true,
+                                        modifier = Modifier.width(120.dp)
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = newLabel,
+                                    onValueChange = { newLabel = it.take(24) },
+                                    label = { Text("Label (optional)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Button(
+                                    enabled = manualHost.isNotBlank(),
+                                    onClick = {
+                                        val port = manualPortText.toIntOrNull() ?: 9100
+                                        val sp = SavedPrinter(
+                                            name = if (port == 631) "Manual IPP" else "Manual ESC/POS",
+                                            host = manualHost.trim(),
+                                            port = port,
+                                            label = newLabel.ifBlank { null },
+                                            paperWidthMm = paperWidth.toIntOrNull() ?: 80,
+                                            dotsPerMm = dotsPerMm.toIntOrNull() ?: 8,
+                                            initHex = initHex,
+                                            cutterHex = cutterHex,
+                                            drawerHex = drawerHex
+                                        )
+                                        printerSettings.addPrinter(sp, setDefault = savedPrinters.isEmpty())
+                                        val idx = savedPrinters.indexOfFirst { it.host == sp.host && it.port == sp.port }
+                                        if (idx >= 0) savedPrinters[idx] = sp else savedPrinters.add(sp)
+                                        defaultPrinterId = printerSettings.getDefaultPrinter()?.id
+                                    }
+                                ) { Text("Connect Manually", fontFamily = FontFamily.Monospace) }
+
+                                // Advanced settings (Loyverse-style)
+                                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                                    Text(text = if (showAdvanced) "Hide Advanced" else "Show Advanced", fontFamily = FontFamily.Monospace)
+                                }
+                                if (showAdvanced) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedTextField(
+                                                    value = paperWidth,
+                                                    onValueChange = { paperWidth = it.filter { ch -> ch.isDigit() }.take(3) },
+                                                    label = { Text("Paper width (mm)") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                OutlinedTextField(
+                                                    value = dotsPerMm,
+                                                    onValueChange = { dotsPerMm = it.filter { ch -> ch.isDigit() }.take(2) },
+                                                    label = { Text("Dots/mm") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.width(120.dp)
+                                                )
+                                            }
+                                            OutlinedTextField(
+                                                value = initHex,
+                                                onValueChange = { initHex = it },
+                                                label = { Text("Initial ESC/POS (hex, comma)") },
+                                                singleLine = true,
+                                                placeholder = { Text("1B,40") }
+                                            )
+                                            OutlinedTextField(
+                                                value = cutterHex,
+                                                onValueChange = { cutterHex = it },
+                                                label = { Text("Cutter ESC/POS (hex, comma)") },
+                                                singleLine = true,
+                                                placeholder = { Text("1D,56,42,00") }
+                                            )
+                                            OutlinedTextField(
+                                                value = drawerHex,
+                                                onValueChange = { drawerHex = it },
+                                                label = { Text("Drawer ESC/POS (hex, comma)") },
+                                                singleLine = true,
+                                                placeholder = { Text("1B,70,00,19,FA") }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Bluetooth Printers
+                                Text(
+                                    text = "Bluetooth Printers",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                if (!BluetoothPermissionManager(context).hasBluetoothPermissions()) {
+                                                    lastTestMessage = "Bluetooth permissions missing"
+                                                } else {
+                                                    val list = BluetoothPrintersConnections().getList()
+                                                    btPrinters = list?.toList() ?: emptyList()
+                                                    lastTestMessage = "Found ${btPrinters.size} Bluetooth devices"
+                                                }
+                                            } catch (e: Exception) {
+                                                lastTestMessage = "BT scan error: ${e.message}"
+                                            }
+                                        }
+                                    ) { Text("Scan BT Printers", fontFamily = FontFamily.Monospace) }
+                                    if (selectedBtPrinter != null) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                if (selectedBtPrinter == null) return@OutlinedButton
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val conn = selectedBtPrinter!!
+                                                        val dev = conn.device
+                                                        val addr = try { dev?.address ?: "bt" } catch (_: Exception) { "bt" }
+                                                        val name = try { dev?.name } catch (_: Exception) { null }
+                                                        val connected = conn.connect()
+                                                        val printer = EscPosPrinter(connected, 203, 48f, 32)
+                                                        printer.printFormattedText("[C]<b>BT Test</b>\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n")
+                                                        printer.printFormattedText("[C]\n[C]\n")
+                                                        lastTestMessage = "Bluetooth test printed"
+                                                        // Auto-save BT printer to the same Saved Printers list (host=MAC, port=0)
+                                                        runCatching {
+                                                            val sp = SavedPrinter(
+                                                                name = name ?: "Bluetooth ESC/POS",
+                                                                host = addr,
+                                                                port = 0,
+                                                                label = (newLabel.ifBlank { null }) ?: (name ?: "Bluetooth ESC/POS"),
+                                                                paperWidthMm = paperWidth.toIntOrNull() ?: 80,
+                                                                dotsPerMm = dotsPerMm.toIntOrNull() ?: 8,
+                                                                initHex = initHex,
+                                                                cutterHex = cutterHex,
+                                                                drawerHex = drawerHex
+                                                            )
+                                                            printerSettings.addPrinter(sp, setDefault = savedPrinters.isEmpty())
+                                                            val idx = savedPrinters.indexOfFirst { it.host == sp.host && it.port == sp.port }
+                                                            if (idx >= 0) savedPrinters[idx] = sp else savedPrinters.add(sp)
+                                                            defaultPrinterId = printerSettings.getDefaultPrinter()?.id
+                                                            lastTestMessage = "Bluetooth test printed • saved printer"
+                                                        }
+                                                        AppDatabaseHelper(context).insertPrintLog(
+                                                            PrintLog(
+                                                                printerId = null,
+                                                                host = addr,
+                                                                port = 0,
+                                                                label = name,
+                                                                type = "bt_escpos_test",
+                                                                success = true
+                                                            )
+                                                        )
+                                                    } catch (t: Throwable) {
+                                                        val dev = selectedBtPrinter!!.device
+                                                        val addr = try { dev?.address ?: "bt" } catch (_: Exception) { "bt" }
+                                                        val name = try { dev?.name } catch (_: Exception) { null }
+                                                        lastTestMessage = "BT test failed: ${t.message}"
+                                                        AppDatabaseHelper(context).insertPrintLog(
+                                                            PrintLog(
+                                                                printerId = null,
+                                                                host = addr,
+                                                                port = 0,
+                                                                label = name,
+                                                                type = "bt_escpos_test",
+                                                                success = false
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        ) { Text("Connect & Test Selected", fontFamily = FontFamily.Monospace) }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val conn = selectedBtPrinter ?: return@OutlinedButton
+                                                val dev = conn.device
+                                                val addr = try { dev?.address ?: "bt" } catch (_: Exception) { "bt" }
+                                                val name = try { dev?.name ?: "Bluetooth ESC/POS" } catch (_: Exception) { "Bluetooth ESC/POS" }
+                                                // Save BT printer with MAC address in host and port=0
+                                                val sp = SavedPrinter(
+                                                    name = name,
+                                                    host = addr,
+                                                    port = 0,
+                                                    label = (newLabel.ifBlank { null }) ?: name,
+                                                    paperWidthMm = paperWidth.toIntOrNull() ?: 80,
+                                                    dotsPerMm = dotsPerMm.toIntOrNull() ?: 8,
+                                                    initHex = initHex,
+                                                    cutterHex = cutterHex,
+                                                    drawerHex = drawerHex
+                                                )
+                                                printerSettings.addPrinter(sp, setDefault = savedPrinters.isEmpty())
+                                                val idx = savedPrinters.indexOfFirst { it.host == sp.host && it.port == sp.port }
+                                                if (idx >= 0) savedPrinters[idx] = sp else savedPrinters.add(sp)
+                                                defaultPrinterId = printerSettings.getDefaultPrinter()?.id
+                                                lastTestMessage = "Saved Bluetooth printer: ${sp.label ?: sp.name}"
+                                            }
+                                        ) { Text("Save Selected BT Printer", fontFamily = FontFamily.Monospace) }
+                                    }
+                                }
+                                if (btPrinters.isNotEmpty()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        btPrinters.take(6).forEach { conn ->
+                                            val dev = conn.device
+                                            val name = try { dev?.name ?: "Unknown" } catch (_: Exception) { "Unknown" }
+                                            val addr = try { dev?.address ?: "" } catch (_: Exception) { "" }
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .padding(8.dp)
+                                                        .fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text(name, style = MaterialTheme.typography.bodyMedium)
+                                                        Text(addr, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                                    }
+                                                    OutlinedButton(onClick = { selectedBtPrinter = conn }) { Text("Select", fontFamily = FontFamily.Monospace) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Recent Print Logs
+                                Text(
+                                    text = "Polling Print Logs",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    text = "Polling API every 5s",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                                if (recentLogs.isEmpty()) {
+                                    Text(
+                                        text = "No polling print logs yet",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        recentLogs.take(10).forEach { log ->
+                                            val time = try { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp)) } catch (_: Exception) { "" }
+                                            val hostPort = "${log.host}:${log.port}"
+                                            val okText = if (log.success) "OK" else "FAIL"
+                                            val labelText = log.label ?: ""
+                                            Text(
+                                                text = "[$time] ${log.type} • $okText • ${labelText} • ${hostPort}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                            )
+                                        }
                                     }
                                 }
                             }

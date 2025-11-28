@@ -1,9 +1,16 @@
 package com.bitchat.android
 
 import android.app.Application
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.bitchat.android.nostr.RelayDirectory
 import com.bitchat.android.ui.theme.ThemePreferenceManager
 import com.bitchat.android.net.TorManager
+import com.bitchat.android.merchant.MerchantOrdersWorkScheduler
 
 /**
  * Main application class for bitchat Android
@@ -39,5 +46,7 @@ class BitchatApplication : Application() {
         try { com.bitchat.android.ui.debug.DebugPreferenceManager.init(this) } catch (_: Exception) { }
 
         // TorManager already initialized above
+        // Initialize runtime scheduler to react to merchant login/logout
+        try { MerchantOrdersWorkScheduler.init(this) } catch (_: Exception) { }
     }
 }

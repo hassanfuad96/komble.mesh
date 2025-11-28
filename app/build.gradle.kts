@@ -95,6 +95,9 @@ dependencies {
     // WebSocket
     implementation(libs.okhttp)
 
+    // Background work (polling orders API)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // Arti (Tor in Rust) Android bridge - use published AAR with native libs
     implementation("info.guardianproject:arti-mobile-ex:1.2.3")
 
@@ -106,6 +109,9 @@ dependencies {
     
     // EXIF orientation handling for images
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // ESC/POS Thermal Printer library (Bluetooth/TCP/USB) via JitPack
+    implementation("com.github.DantSu:ESCPOS-ThermalPrinter-Android:3.3.0")
     
     // Testing
     testImplementation(libs.bundles.testing)
