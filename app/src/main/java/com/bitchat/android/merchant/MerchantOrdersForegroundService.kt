@@ -54,14 +54,13 @@ class MerchantOrdersForegroundService : Service() {
             try { startForeground(NOTIFICATION_ID, notification) } catch (_: Throwable) {}
         }
 
-        // Start polling
-        try { MerchantOrdersPoller.start(applicationContext) } catch (_: Throwable) { }
+        try { MerchantWebSocketManager.start(applicationContext) } catch (_: Throwable) { }
 
         return START_STICKY
     }
 
     override fun onDestroy() {
-        try { MerchantOrdersPoller.stop() } catch (_: Throwable) { }
+        try { MerchantWebSocketManager.stop() } catch (_: Throwable) { }
         super.onDestroy()
     }
 
@@ -92,7 +91,7 @@ class MerchantOrdersForegroundService : Service() {
             .setOngoing(true)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("KomBLE.mesh Merchant")
-            .setContentText("Polling orders every 5s")
+            .setContentText("Realtime orders via WebSocket")
             .setContentIntent(pending)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
@@ -103,7 +102,7 @@ class MerchantOrdersForegroundService : Service() {
             .setOngoing(true)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("KomBLE.mesh Merchant")
-            .setContentText("Polling orders")
+            .setContentText("Realtime orders")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
     }

@@ -20,6 +20,8 @@ data class SavedPrinter(
     // Per-printer category selection
     val selectedCategoryIds: List<Int>? = null, // include 0 for "All"
     val uncategorizedSelected: Boolean? = null,
+    // Auto-print control per printer
+    val autoPrintEnabled: Boolean? = null,
     // Multi-printer support
     val id: String = UUID.randomUUID().toString()
 )
@@ -86,6 +88,13 @@ class PrinterSettingsManager(context: Context) {
         val updated = getPrinters().map { p ->
             if (p.id == id) p.copy(selectedCategoryIds = selectedIds, uncategorizedSelected = includeUncategorized)
             else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterAutoPrint(id: String, enabled: Boolean) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(autoPrintEnabled = enabled) else p
         }
         persistPrinters(updated)
     }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Switch
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -44,8 +46,13 @@ fun MerchantTerminalScreen() {
     val scope = rememberCoroutineScope()
     var btPrinters by remember { mutableStateOf<List<BluetoothConnection>>(emptyList()) }
     var selectedBtPrinter by remember { mutableStateOf<BluetoothConnection?>(null) }
+    val availableAutoEvents = remember { listOf("paid","printed","ready","order.paid","order.printed","order.ready","order.*","*") }
+    var selectedAutoEvents by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var savedPrinters by remember { mutableStateOf<List<com.bitchat.android.printer.SavedPrinter>>(emptyList()) }
 
     LaunchedEffect(Unit) {
+        selectedAutoEvents = MerchantWebSocketManager.getAutoPrintEvents(context)
+        savedPrinters = com.bitchat.android.printer.PrinterSettingsManager(context).getPrinters()
         while (true) {
             logs = AppDatabaseHelper(context).queryRecentLogs(limit = 100)
             delay(2000)
@@ -74,8 +81,64 @@ fun MerchantTerminalScreen() {
             Button(onClick = {
                 try { context.startActivity(android.content.Intent(context, MerchantPrintSuccessActivity::class.java)) } catch (_: Exception) { }
             }) { Text("Print Success") }
+            Button(onClick = {
+                scope.launch {
+                    try {
+                        AppDatabaseHelper(context).clearLogs()
+                        logs = emptyList()
+                        statusMessage = "Logs cleared"
+                    } catch (_: Exception) { }
+                }
+            }) { Text("Clear Logs") }
         }
         Spacer(Modifier.height(8.dp))
+
+        Text(text = "Auto Print Events", color = Color(0xFF80D8FF))
+        Spacer(Modifier.height(4.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            availableAutoEvents.forEach { opt ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Checkbox(
+                        checked = selectedAutoEvents.contains(opt),
+                        onCheckedChange = { checked: Boolean ->
+                            selectedAutoEvents = if (checked) selectedAutoEvents + opt else selectedAutoEvents - opt
+                        }
+                    )
+                    Text(text = opt, color = Color(0xFFCCCCCC), fontFamily = FontFamily.Monospace)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    scope.launch {
+                        MerchantWebSocketManager.setAutoPrintEvents(context, selectedAutoEvents)
+                        statusMessage = "Auto print updated"
+                    }
+                }) { Text("Save") }
+                val connected = MerchantWebSocketManager.isConnected()
+                Text(text = if (connected) "WS:connected" else "WS:disconnected", color = if (connected) Color(0xFF00E676) else Color(0xFFFF5252), fontFamily = FontFamily.Monospace)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (savedPrinters.isNotEmpty()) {
+            Text(text = "Per-Printer Auto Print", color = Color(0xFF80D8FF))
+            Spacer(Modifier.height(4.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                savedPrinters.forEach { sp ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val title = (sp.label ?: sp.name ?: "Printer") + " — ${sp.host}:${sp.port}"
+                        Text(text = title, color = Color(0xFFCCCCCC), fontFamily = FontFamily.Monospace)
+                        var enabled by remember { mutableStateOf(sp.autoPrintEnabled != false) }
+                        Switch(checked = enabled, onCheckedChange = { chk ->
+                            enabled = chk
+                            com.bitchat.android.printer.PrinterSettingsManager(context).setPrinterAutoPrint(sp.id, chk)
+                            savedPrinters = com.bitchat.android.printer.PrinterSettingsManager(context).getPrinters()
+                        })
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
 
         Spacer(Modifier.height(8.dp))
         if (statusMessage.isNotEmpty()) {

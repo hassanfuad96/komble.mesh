@@ -5,6 +5,7 @@ import android.util.Log
 import com.bitchat.android.net.OkHttpProvider
 import com.bitchat.android.printer.PrinterManager
 import com.bitchat.android.printer.PrinterSettingsManager
+import com.bitchat.android.identity.SecureIdentityStateManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,8 +30,9 @@ import kotlin.math.min
 object MerchantWebSocketManager {
     private const val TAG = "MerchantWebSocketManager"
 
-    // Endpoint can be adjusted as per WEBSOCKET.md; default to go.realm.chat
-    private const val DEFAULT_WS_URL = "wss://go.realm.chat/api/v1/ws"
+    private const val DEFAULT_WS_URL = "wss://komers-realtime-hub.bekreatif2020-4d4.workers.dev/ws"
+    private const val KEY_AUTO_PRINT_EVENTS = "merchant_auto_print_events"
+    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("paid", "order.paid", "printed", "order.printed", "ready", "order.ready")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
@@ -54,6 +56,38 @@ object MerchantWebSocketManager {
     // Small de-duplication window for order_id to avoid repeated prints
     private const val DEDUP_WINDOW_MS = 15_000L
     private val recentPaidEvents = ConcurrentHashMap<String, Long>()
+    @Volatile private var autoPrintEvents: Set<String> = DEFAULT_AUTO_PRINT_EVENTS
+
+    private fun normalizeEvents(events: Set<String>): Set<String> = events.mapNotNull { it.trim().lowercase().takeIf { s -> s.isNotBlank() } }.toSet()
+
+    fun setAutoPrintEvents(context: Context, events: Set<String>) {
+        val normalized = normalizeEvents(events)
+        autoPrintEvents = if (normalized.isEmpty()) DEFAULT_AUTO_PRINT_EVENTS else normalized
+        try {
+            SecureIdentityStateManager(context).storeSecureValue(KEY_AUTO_PRINT_EVENTS, autoPrintEvents.joinToString(","))
+        } catch (_: Exception) {}
+    }
+
+    fun getAutoPrintEvents(context: Context): Set<String> {
+        try {
+            val stored = SecureIdentityStateManager(context).getSecureValue(KEY_AUTO_PRINT_EVENTS)
+            if (!stored.isNullOrBlank()) {
+                autoPrintEvents = normalizeEvents(stored.split(",").toSet())
+            }
+        } catch (_: Exception) {}
+        return autoPrintEvents
+    }
+
+    private fun shouldAutoPrint(eventLower: String?, statusLower: String?): Boolean {
+        val selected = autoPrintEvents
+        if (selected.contains("*")) return true
+        if (!statusLower.isNullOrBlank() && selected.contains(statusLower)) return true
+        val ev = eventLower
+        if (ev.isNullOrBlank()) return false
+        if (selected.contains(ev)) return true
+        if (ev.startsWith("order.") && selected.contains("order.*")) return true
+        return false
+    }
 
     fun start(context: Context) {
         if (isStarted) return
@@ -63,6 +97,7 @@ object MerchantWebSocketManager {
             Log.w(TAG, "start: no current user; skipping websocket start")
             return
         }
+        getAutoPrintEvents(appContext)
         shouldRun = true
         connect(appContext)
         isStarted = true
@@ -87,7 +122,7 @@ object MerchantWebSocketManager {
             return
         }
         try {
-            val url = "$DEFAULT_WS_URL?user_id=${currentUser.id}"
+            val url = "$DEFAULT_WS_URL?merchant_id=${currentUser.id}"
             val builder = Request.Builder().url(url)
             // Include bearer when available
             auth.getAuthorizationHeader()?.let { header ->
@@ -128,103 +163,234 @@ object MerchantWebSocketManager {
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             messagesReceived.incrementAndGet()
-            // Parse message; expect JSON with fields including event and user/order identification
             val obj: JsonObject = try {
                 JsonParser.parseString(text).asJsonObject
             } catch (t: Throwable) {
                 Log.w(TAG, "Ignoring non-JSON WebSocket message: ${t.message}")
                 return
             }
-
-            val event = obj.get("event")?.asString ?: obj.get("type")?.asString
-            if (event != null && event.lowercase() != "paid") {
-                // Not a paid event; ignore
-                return
-            }
-            paidEventsReceived.incrementAndGet()
+            val eventType = obj.get("type")?.asString ?: obj.get("event")?.asString
+            val eventLower = eventType?.lowercase()
 
             val auth = MerchantAuthManager.getInstance(context)
-            val currentUserId = auth.getCurrentUser()?.id
-            if (currentUserId == null) {
+            val currentUserId = auth.getCurrentUser()?.id ?: run {
                 Log.w(TAG, "onMessage: no current user; ignoring event")
                 return
             }
 
-            // Verify ownership: compare user_id in payload to current user
-            val payloadUserId = obj.get("user_id")?.let { el ->
-                try { el.asInt } catch (_: Throwable) {
-                    try { el.asString.toInt() } catch (_: Throwable) { null }
-                }
+            val payloadMerchant = obj.get("merchant_id")?.asString
+            val dataObj = obj.get("data")?.let { if (it.isJsonObject) it.asJsonObject else null }
+            val userFromData = dataObj?.get("user_id")?.let { el ->
+                try { el.asString } catch (_: Throwable) { try { el.asInt.toString() } catch (_: Throwable) { null } }
             }
-            if (payloadUserId != null && payloadUserId != currentUserId) {
-                Log.d(TAG, "Event user_id=$payloadUserId does not match current=$currentUserId; skipping")
-                return
-            }
+            val currentUserStr = currentUserId.toString()
+            if (!payloadMerchant.isNullOrBlank() && payloadMerchant != currentUserStr) return
+            if (!userFromData.isNullOrBlank() && userFromData != currentUserStr) return
 
-            // Identify order ID field variants
-            val orderId = obj.get("order_id")?.asString
-                ?: obj.get("id")?.asString
-                ?: obj.get("orderId")?.asString
-            if (orderId.isNullOrBlank()) {
-                Log.w(TAG, "Paid event missing order_id; skipping")
-                return
+            val orderId = when {
+                dataObj?.get("order_id") != null -> try { dataObj.get("order_id").asString } catch (_: Throwable) { null }
+                dataObj?.get("id") != null -> try { dataObj.get("id").asString } catch (_: Throwable) { null }
+                obj.get("order_id") != null -> try { obj.get("order_id").asString } catch (_: Throwable) { null }
+                obj.get("id") != null -> try { obj.get("id").asString } catch (_: Throwable) { null }
+                else -> null
             }
+            if (orderId.isNullOrBlank()) return
 
-            // De-duplication window: skip if recently processed
+            val statusLower = dataObj?.get("status")?.let { el ->
+                try { el.asString.lowercase() } catch (_: Throwable) { null }
+            }
+            val shouldPrint = shouldAutoPrint(eventLower, statusLower)
+
             val now = System.currentTimeMillis()
             val last = recentPaidEvents[orderId]
-            if (last != null && (now - last) < DEDUP_WINDOW_MS) {
+            if (last != null && (now - last) < DEDUP_WINDOW_MS && shouldPrint) {
                 paidEventsDeduped.incrementAndGet()
-                Log.v(TAG, "Skipping duplicate paid event for order $orderId within ${DEDUP_WINDOW_MS}ms window")
                 return
             }
-            recentPaidEvents[orderId] = now
-            // Light pruning to bound map size
+            if (shouldPrint) recentPaidEvents[orderId] = now
             if (recentPaidEvents.size > 1000) {
                 val cutoff = now - (10 * 60_000L)
                 recentPaidEvents.entries.removeIf { it.value < cutoff }
             }
 
-            // Handle printing asynchronously
             scope.launch {
                 try {
-                    val authHeader = auth.getAuthorizationHeader()
-                    // Refresh orders to ensure the DB has latest items/status for this user
-                    OrdersStoreHelper.fetchAndStore(context, currentUserId, authHeader)
-
-                    // Prepare minimal OrderDto for formatting/updates
-                    val orderDto = OrdersSyncWorker.OrderDto(
-                        id = null,
-                        orderId = orderId,
-                        globalNote = null,
-                        customerName = null,
-                        customerPhone = null,
-                        tableNumber = null,
-                        createdAt = null,
-                        deliveryMethod = null,
-                        deviceId = null,
-                        userId = null,
-                        status = null,
-                        updatedAtStatus = null,
-                        products = null
-                    )
-
-                    val printers = PrinterSettingsManager(context).getPrinters()
-                    if (printers.isEmpty()) {
-                        Log.d(TAG, "No saved printers; skipping print for order $orderId")
-                        return@launch
+                    val db = com.bitchat.android.db.AppDatabaseHelper(context)
+                    try {
+                        db.insertPrintLog(
+                            com.bitchat.android.db.PrintLog(
+                                printerId = null,
+                                host = "ws",
+                                port = 0,
+                                label = "event=" + (eventLower ?: "") + "|status=" + (statusLower ?: "") + "|order=" + orderId,
+                                type = "ws_receive",
+                                success = true
+                            )
+                        )
+                    } catch (_: Exception) { }
+                    if (dataObj != null) {
+                        val dto = OrdersSyncWorker.OrderDto(
+                            id = dataObj.get("id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            orderId = orderId,
+                            globalNote = dataObj.get("global_note")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            customerName = dataObj.get("customer_name")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            customerPhone = dataObj.get("customer_phone")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            tableNumber = dataObj.get("table_number")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            createdAt = dataObj.get("created_at")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            deliveryMethod = dataObj.get("delivery_method")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            deviceId = dataObj.get("device_id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            userId = dataObj.get("user_id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            status = dataObj.get("status")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            updatedAtStatus = dataObj.get("updated_at_status")?.let { try { it.asString } catch (_: Throwable) { null } },
+                            products = dataObj.get("products")?.let { pel ->
+                                try {
+                                    if (!pel.isJsonArray) emptyList() else pel.asJsonArray.mapNotNull { pEl ->
+                                        val pObj = try { pEl.asJsonObject } catch (_: Throwable) { null } ?: return@mapNotNull null
+                                        OrdersSyncWorker.ProductDto(
+                                            id = pObj.get("id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                                            name = pObj.get("name")?.let { try { it.asString } catch (_: Throwable) { null } } ?: return@mapNotNull null,
+                                            price = pObj.get("price")?.let { 
+                                                try { if (it.isJsonPrimitive && it.asJsonPrimitive.isNumber) it.asNumber.toString() else it.asString } catch (_: Throwable) { null }
+                                            },
+                                            quantity = pObj.get("quantity")?.let { 
+                                                try { it.asInt } catch (_: Throwable) { try { it.asString.toInt() } catch (_: Throwable) { null } }
+                                            },
+                                            variant = pObj.get("variant")?.let { try { it.asString } catch (_: Throwable) { null } },
+                                            categoryId = pObj.get("category_id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                                            prepared = pObj.get("prepared")?.let { 
+                                                try { it.asBoolean } catch (_: Throwable) { try { it.asInt != 0 } catch (_: Throwable) { null } }
+                                            }
+                                        )
+                                    }
+                                } catch (_: Throwable) { emptyList() }
+                            }
+                        )
+                        db.upsertOrder(
+                            orderId = dto.orderId,
+                            id = dto.id,
+                            createdAt = dto.createdAt,
+                            deliveryMethod = dto.deliveryMethod,
+                            userId = dto.userId,
+                            status = dto.status
+                        )
+                        val items = dto.products?.map { p ->
+                            com.bitchat.android.db.AppDatabaseHelper.OrderItem(
+                                itemId = p.id,
+                                name = p.name,
+                                quantity = (p.quantity ?: 0),
+                                variant = p.variant,
+                                categoryId = p.categoryId,
+                                prepared = (p.prepared ?: false)
+                            )
+                        }.orEmpty()
+                        db.replaceOrderItems(dto.orderId, items)
+                        try {
+                            db.insertPrintLog(
+                                com.bitchat.android.db.PrintLog(
+                                    printerId = null,
+                                    host = "ws",
+                                    port = 0,
+                                    label = "event_store",
+                                    type = "ws_event_store",
+                                    success = true
+                                )
+                            )
+                        } catch (_: Exception) { }
+                    } else {
+                        val authHeader = auth.getAuthorizationHeader()
+                        OrdersStoreHelper.fetchAndStore(context, currentUserId, authHeader)
                     }
 
-                    val db = com.bitchat.android.db.AppDatabaseHelper(context)
-                    printers.forEach { printer ->
-                        try {
-                            printAttempts.incrementAndGet()
-                            val content = PrinterManager.formatOrderForPrinter(context, orderDto, printer)
-                            if (content.isNotBlank()) {
-                                val ok = PrinterManager.printOrder(context, printer, content, orderDto)
-                                Log.d(TAG, "Printed order $orderId to ${printer.host}:${printer.port} success=$ok")
-                                if (ok) printSuccesses.incrementAndGet() else printFailures.incrementAndGet()
-                                // Log websocket-driven print attempt
+                    if (eventLower == "order.status.updated" && !statusLower.isNullOrBlank()) {
+                        db.updateOrderStatus(orderId, statusLower)
+                    }
+                    if (eventLower == "order.cancelled") {
+                        db.updateOrderStatus(orderId, "cancelled")
+                    }
+                    if (eventLower == "item.prepared") {
+                        val productId = dataObj?.get("product_id")?.let { el ->
+                            try { el.asString } catch (_: Throwable) { null }
+                        }
+                        val preparedFlag = dataObj?.get("prepared")?.let { el ->
+                            try { el.asBoolean } catch (_: Throwable) { try { el.asInt != 0 } catch (_: Throwable) { null } }
+                        } ?: false
+                        if (!productId.isNullOrBlank()) {
+                            db.updateProductPrepared(orderId, productId, preparedFlag)
+                            if (db.areAllItemsPrepared(orderId)) {
+                                db.updateOrderStatus(orderId, "ready")
+                            }
+                        }
+                    }
+
+                    if (shouldPrint) {
+                        val printers = PrinterSettingsManager(context).getPrinters().filter { p ->
+                            p.autoPrintEnabled != false
+                        }
+                        if (printers.isEmpty()) {
+                            try {
+                                db.insertPrintLog(
+                                    com.bitchat.android.db.PrintLog(
+                                        printerId = null,
+                                        host = "ws",
+                                        port = 0,
+                                        label = "auto_print_skipped=printers",
+                                        type = "ws_print",
+                                        success = false
+                                    )
+                                )
+                            } catch (_: Exception) { }
+                            return@launch
+                        }
+                        val orderDto = OrdersSyncWorker.OrderDto(
+                            id = null,
+                            orderId = orderId,
+                            globalNote = null,
+                            customerName = null,
+                            customerPhone = null,
+                            tableNumber = null,
+                            createdAt = null,
+                            deliveryMethod = null,
+                            deviceId = null,
+                            userId = null,
+                            status = statusLower,
+                            updatedAtStatus = null,
+                            products = null
+                        )
+                        printers.forEach { printer ->
+                            try {
+                                printAttempts.incrementAndGet()
+                                val content = PrinterManager.formatOrderForPrinter(context, orderDto, printer)
+                                if (content.isNotBlank()) {
+                                    val ok = PrinterManager.printOrder(context, printer, content, orderDto)
+                                    if (ok) printSuccesses.incrementAndGet() else printFailures.incrementAndGet()
+                                    try {
+                                        db.insertPrintLog(
+                                            com.bitchat.android.db.PrintLog(
+                                                printerId = printer.id,
+                                                host = printer.host,
+                                                port = printer.port,
+                                                label = printer.label,
+                                                type = "ws_print",
+                                                success = ok
+                                            )
+                                        )
+                                    } catch (_: Exception) { }
+                                } else {
+                                    try {
+                                        db.insertPrintLog(
+                                            com.bitchat.android.db.PrintLog(
+                                                printerId = printer.id,
+                                                host = printer.host,
+                                                port = printer.port,
+                                                label = "no_matching_items",
+                                                type = "ws_print",
+                                                success = false
+                                            )
+                                        )
+                                    } catch (_: Exception) { }
+                                }
+                            } catch (e: Exception) {
+                                printFailures.incrementAndGet()
                                 try {
                                     db.insertPrintLog(
                                         com.bitchat.android.db.PrintLog(
@@ -233,32 +399,15 @@ object MerchantWebSocketManager {
                                             port = printer.port,
                                             label = printer.label,
                                             type = "ws_print",
-                                            success = ok
+                                            success = false
                                         )
                                     )
                                 } catch (_: Exception) { }
-                            } else {
-                                Log.v(TAG, "Printer ${printer.id} had no matching items for order $orderId")
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Print pipeline error for printer ${printer.id}", e)
-                            printFailures.incrementAndGet()
-                            try {
-                                db.insertPrintLog(
-                                    com.bitchat.android.db.PrintLog(
-                                        printerId = printer.id,
-                                        host = printer.host,
-                                        port = printer.port,
-                                        label = printer.label,
-                                        type = "ws_print",
-                                        success = false
-                                    )
-                                )
-                            } catch (_: Exception) { }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed handling paid event for order $orderId", e)
+                    Log.e(TAG, "Failed handling event", e)
                 }
             }
         }
