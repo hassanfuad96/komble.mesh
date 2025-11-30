@@ -74,34 +74,49 @@ object PrinterManager {
         if (filtered.isEmpty()) return ""
 
         val sb = StringBuilder()
-        appendLineIfNotBlank(sb, "KomBLE.mesh")
-        appendLineIfNotBlank(sb, "Order #${order.orderId}")
-        appendLineIfNotBlank(sb, formatDisplayDate(order.createdAt))
-        appendLineIfNotBlank(sb, "Status: ${order.status}")
-        appendLineIfNotBlank(sb, "Note: ${order.globalNote ?: ""}")
-        val customer = order.customerName?.trim()
-        if (!customer.isNullOrBlank() && customer.lowercase() != "none") {
-            appendLineIfNotBlank(sb, "Customer: ${customer}")
+        if (printer.role == "station") {
+            val grouped = filtered.groupBy { it.categoryId?.toIntOrNull() }
+            grouped.forEach { (idInt, groupItems) ->
+                val catName = CategoriesApiService.getCategoryName(categories, idInt)
+                sb.append("[C]<b>${catName}</b>\n")
+                sb.append("[C]------------------------------\n")
+                groupItems.forEach { item ->
+                    val variant = item.variant?.let { " ($it)" } ?: ""
+                    sb.append("${item.name}$variant x${item.quantity}\n")
+                }
+                sb.append("[C]------------------------------\n")
+            }
+            return sb.toString().trimEnd()
+        } else {
+            appendLineIfNotBlank(sb, "KomBLE.mesh")
+            appendLineIfNotBlank(sb, "Order #${order.orderId}")
+            appendLineIfNotBlank(sb, formatDisplayDate(order.createdAt))
+            appendLineIfNotBlank(sb, "Status: ${order.status}")
+            appendLineIfNotBlank(sb, "Note: ${order.globalNote ?: ""}")
+            val customer = order.customerName?.trim()
+            if (!customer.isNullOrBlank() && customer.lowercase() != "none") {
+                appendLineIfNotBlank(sb, "Customer: ${customer}")
+            }
+            val phone = order.customerPhone?.trim()
+            if (!phone.isNullOrBlank() && phone.lowercase() != "none") {
+                appendLineIfNotBlank(sb, "Phone: ${phone}")
+            }
+            appendLineIfNotBlank(sb, "Table: ${order.tableNumber ?: "N/A"}")
+            appendLineIfNotBlank(sb, "Delivery: ${order.deliveryMethod}")
+            sb.append("------------------------------\n")
+            filtered.forEach { item ->
+                val idInt = item.categoryId?.toIntOrNull()
+                val catName = CategoriesApiService.getCategoryName(categories, idInt)
+                val qty = item.quantity
+                val variant = item.variant?.let { " ($it)" } ?: ""
+                sb.append("${item.name}$variant x$qty\n")
+                // Skip item note: no per-item note field in OrderItem
+                sb.append("  [${catName}]\n")
+            }
+            sb.append("------------------------------\n")
+            sb.append("Thank you!\n")
+            return sb.toString().trimEnd()
         }
-        val phone = order.customerPhone?.trim()
-        if (!phone.isNullOrBlank() && phone.lowercase() != "none") {
-            appendLineIfNotBlank(sb, "Phone: ${phone}")
-        }
-        appendLineIfNotBlank(sb, "Table: ${order.tableNumber ?: "N/A"}")
-        appendLineIfNotBlank(sb, "Delivery: ${order.deliveryMethod}")
-        sb.append("------------------------------\n")
-        filtered.forEach { item ->
-            val idInt = item.categoryId?.toIntOrNull()
-            val catName = CategoriesApiService.getCategoryName(categories, idInt)
-            val qty = item.quantity
-            val variant = item.variant?.let { " ($it)" } ?: ""
-            sb.append("${item.name}$variant x$qty\n")
-            // Skip item note: no per-item note field in OrderItem
-            sb.append("  [${catName}]\n")
-        }
-        sb.append("------------------------------\n")
-        sb.append("Thank you!\n")
-        return sb.toString().trimEnd()
     }
     private fun formatDisplayDate(createdAt: String?): String? {
         if (createdAt.isNullOrBlank()) return null
