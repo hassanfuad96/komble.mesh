@@ -105,6 +105,25 @@
             android:exported="false"
             android:theme="@style/Theme.BitchatAndroid"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".komprint.KomPrintActivity"
+            android:exported="true"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="komprint" android:host="print" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".komprint.KomPrintProgressActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop" />
         <service
             android:name=".merchant.MerchantOrdersForegroundService"
             android:exported="false"

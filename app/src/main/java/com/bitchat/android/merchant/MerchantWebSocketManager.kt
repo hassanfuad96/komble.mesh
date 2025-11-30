@@ -1,6 +1,7 @@
 package com.bitchat.android.merchant
 
 import android.content.Context
+import android.bluetooth.BluetoothAdapter
 import android.util.Log
 import com.bitchat.android.net.OkHttpProvider
 import com.bitchat.android.printer.PrinterManager
@@ -32,7 +33,7 @@ object MerchantWebSocketManager {
 
     private const val DEFAULT_WS_URL = "wss://komers-realtime-hub.bekreatif2020-4d4.workers.dev/ws"
     private const val KEY_AUTO_PRINT_EVENTS = "merchant_auto_print_events"
-    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("paid", "order.paid", "printed", "order.printed", "ready", "order.ready")
+    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("order.created", "paid", "order.paid")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
@@ -59,6 +60,14 @@ object MerchantWebSocketManager {
     @Volatile private var autoPrintEvents: Set<String> = DEFAULT_AUTO_PRINT_EVENTS
 
     private fun normalizeEvents(events: Set<String>): Set<String> = events.mapNotNull { it.trim().lowercase().takeIf { s -> s.isNotBlank() } }.toSet()
+
+    private fun getDeviceId(context: Context): String? {
+        val bt = try { BluetoothAdapter.getDefaultAdapter()?.address } catch (_: Throwable) { null }
+        val validBt = if (bt.isNullOrBlank() || bt == "02:00:00:00:00:00") null else bt
+        if (validBt != null) return validBt
+        val aid = try { android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) } catch (_: Throwable) { null }
+        return aid
+    }
 
     fun setAutoPrintEvents(context: Context, events: Set<String>) {
         val normalized = normalizeEvents(events)
@@ -122,7 +131,9 @@ object MerchantWebSocketManager {
             return
         }
         try {
-            val url = "$DEFAULT_WS_URL?merchant_id=${currentUser.id}"
+            val sb = StringBuilder().append(DEFAULT_WS_URL).append("?merchant_id=").append(currentUser.id)
+            getDeviceId(context)?.let { did -> sb.append("&device=").append(java.net.URLEncoder.encode(did, "UTF-8")) }
+            val url = sb.toString()
             val builder = Request.Builder().url(url)
             // Include bearer when available
             auth.getAuthorizationHeader()?.let { header ->
@@ -322,9 +333,38 @@ object MerchantWebSocketManager {
                         }
                     }
 
+                    if (eventLower == "order.printed") {
+                        try {
+                            db.insertPrintLog(
+                                com.bitchat.android.db.PrintLog(
+                                    printerId = null,
+                                    host = "ws",
+                                    port = 0,
+                                    label = "notify_printed|order=" + orderId,
+                                    type = "ws_notify_printed",
+                                    success = true
+                                )
+                            )
+                        } catch (_: Exception) { }
+                    }
+                    if (eventLower == "order.ready") {
+                        try {
+                            db.insertPrintLog(
+                                com.bitchat.android.db.PrintLog(
+                                    printerId = null,
+                                    host = "ws",
+                                    port = 0,
+                                    label = "notify_ready|order=" + orderId,
+                                    type = "ws_notify_ready",
+                                    success = true
+                                )
+                            )
+                        } catch (_: Exception) { }
+                    }
+
                     if (shouldPrint) {
                         val printers = PrinterSettingsManager(context).getPrinters().filter { p ->
-                            p.autoPrintEnabled != false
+                            p.autoPrintEnabled != false && p.role == "station"
                         }
                         if (printers.isEmpty()) {
                             try {
@@ -333,7 +373,7 @@ object MerchantWebSocketManager {
                                         printerId = null,
                                         host = "ws",
                                         port = 0,
-                                        label = "auto_print_skipped=printers",
+                                        label = "auto_print_skipped=printers|reason=no_station_printers",
                                         type = "ws_print",
                                         success = false
                                     )
@@ -375,6 +415,7 @@ object MerchantWebSocketManager {
                                             )
                                         )
                                     } catch (_: Exception) { }
+                                    Log.d(TAG, "WS printed order ${orderId} to ${printer.host}:${printer.port} success=${ok}")
                                 } else {
                                     try {
                                         db.insertPrintLog(
@@ -391,6 +432,7 @@ object MerchantWebSocketManager {
                                 }
                             } catch (e: Exception) {
                                 printFailures.incrementAndGet()
+                                Log.e(TAG, "WS print pipeline error for printer ${printer.id}", e)
                                 try {
                                     db.insertPrintLog(
                                         com.bitchat.android.db.PrintLog(

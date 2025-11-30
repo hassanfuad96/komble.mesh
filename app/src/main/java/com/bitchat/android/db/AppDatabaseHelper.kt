@@ -81,6 +81,20 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_orders_outbox_time ON orders_outbox(created_at DESC)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS print_queue (
+                _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL,
+                retries INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_queue_status ON print_queue(status)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -139,6 +153,21 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             } catch (_: Exception) {
                 // Column may already exist; ignore
             }
+        }
+        if (oldVersion < 5) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS print_queue (
+                    _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    retries INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_queue_status ON print_queue(status)")
         }
     }
 
@@ -306,12 +335,105 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DB_NAME = "komble.db"
-        private const val DB_VERSION = 4
+        private const val DB_VERSION = 5
         @Volatile private var instance: AppDatabaseHelper? = null
         @JvmStatic
         fun getInstance(context: Context): AppDatabaseHelper = instance ?: synchronized(this) {
             instance ?: AppDatabaseHelper(context).also { instance = it }
         }
+    }
+
+    data class PrintQueueItem(
+        val id: Long,
+        val payload: String,
+        val status: String,
+        val retries: Int,
+        val createdAt: Long,
+        val updatedAt: Long
+    )
+
+    fun enqueuePrintJob(payload: String) {
+        val now = System.currentTimeMillis()
+        val v = ContentValues().apply {
+            put("payload", payload)
+            put("status", "pending")
+            put("retries", 0)
+            put("created_at", now)
+            put("updated_at", now)
+        }
+        writableDatabase.insert("print_queue", null, v)
+    }
+
+    fun enqueuePrintJobWithId(payload: String): Long {
+        val now = System.currentTimeMillis()
+        val v = ContentValues().apply {
+            put("payload", payload)
+            put("status", "pending")
+            put("retries", 0)
+            put("created_at", now)
+            put("updated_at", now)
+        }
+        return writableDatabase.insert("print_queue", null, v)
+    }
+
+    fun isPrintJobDone(id: Long): Boolean {
+        val c = readableDatabase.query(
+            "print_queue",
+            arrayOf("_id"),
+            "_id=?",
+            arrayOf(id.toString()),
+            null,
+            null,
+            null,
+            "1"
+        )
+        c.use { return !it.moveToFirst() }
+    }
+
+    fun nextPendingPrintJob(): PrintQueueItem? {
+        val c = readableDatabase.query(
+            "print_queue",
+            arrayOf("_id", "payload", "status", "retries", "created_at", "updated_at"),
+            "status=?",
+            arrayOf("pending"),
+            null,
+            null,
+            "_id ASC",
+            "1"
+        )
+        c.use {
+            return if (it.moveToFirst()) {
+                PrintQueueItem(
+                    id = it.getLong(it.getColumnIndex("_id")),
+                    payload = it.getString(it.getColumnIndex("payload")),
+                    status = it.getString(it.getColumnIndex("status")),
+                    retries = it.getInt(it.getColumnIndex("retries")),
+                    createdAt = it.getLong(it.getColumnIndex("created_at")),
+                    updatedAt = it.getLong(it.getColumnIndex("updated_at"))
+                )
+            } else null
+        }
+    }
+
+    fun markPrintJobProcessing(id: Long) {
+        val v = ContentValues().apply {
+            put("status", "processing")
+            put("updated_at", System.currentTimeMillis())
+        }
+        writableDatabase.update("print_queue", v, "_id=?", arrayOf(id.toString()))
+    }
+
+    fun markPrintJobDone(id: Long) {
+        writableDatabase.delete("print_queue", "_id=?", arrayOf(id.toString()))
+    }
+
+    fun markPrintJobFailed(id: Long, retries: Int) {
+        val v = ContentValues().apply {
+            put("status", "pending")
+            put("retries", retries)
+            put("updated_at", System.currentTimeMillis())
+        }
+        writableDatabase.update("print_queue", v, "_id=?", arrayOf(id.toString()))
     }
     fun getOrderItems(orderId: String): List<OrderItem> {
         val result = mutableListOf<OrderItem>()

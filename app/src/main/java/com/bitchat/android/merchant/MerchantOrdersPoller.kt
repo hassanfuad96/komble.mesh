@@ -361,7 +361,7 @@ object MerchantOrdersPoller {
                                                 )
                                             )
                                         } catch (_: Exception) { }
-                                        Log.d(TAG, "Polled+printed order ${o.orderId} to ${printer.host}:${printer.port} success=$ok")
+                                        
                                     } else {
                                         try {
                                             db.insertPrintLog(
@@ -377,7 +377,7 @@ object MerchantOrdersPoller {
                                         } catch (_: Exception) { }
                                     }
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Poller print pipeline error for printer ${printer.id}", e)
+                                    
                                     try {
                                         db.insertPrintLog(
                                             com.bitchat.android.db.PrintLog(

@@ -598,9 +598,9 @@ fun AboutSheet(
                         LaunchedEffect(Unit) {
                             while (true) {
                                 val all = AppDatabaseHelper(context).queryRecentLogs(limit = 100)
-                                val pollOnly = all.filter { it.type == "poll_print" || it.type == "poll_fetch" }
+                                val wsOnly = all.filter { it.type.startsWith("ws_") || it.type == "ws_print" }
                                 recentLogs.clear()
-                                recentLogs.addAll(pollOnly)
+                                recentLogs.addAll(wsOnly)
                                 delay(2000)
                             }
                         }
@@ -738,6 +738,20 @@ fun AboutSheet(
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                                                         )
+                                                    }
+                                                    // Role selector: Main vs Station
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        val role = sp.role ?: "station"
+                                                        FilterChip(selected = role == "main", onClick = {
+                                                            printerSettings.setPrinterRole(sp.id, "main")
+                                                            val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                            if (idx >= 0) savedPrinters[idx] = sp.copy(role = "main")
+                                                        }, label = { Text("Main Printer", fontFamily = FontFamily.Monospace) })
+                                                        FilterChip(selected = role != "main", onClick = {
+                                                            printerSettings.setPrinterRole(sp.id, "station")
+                                                            val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                            if (idx >= 0) savedPrinters[idx] = sp.copy(role = "station")
+                                                        }, label = { Text("Station Printer", fontFamily = FontFamily.Monospace) })
                                                     }
                                                     // Quick summary of selected categories for this printer
                                                     val hasAll = sp.selectedCategoryIds?.contains(0) == true
@@ -1342,17 +1356,17 @@ fun AboutSheet(
 
                                 // Recent Print Logs
                                 Text(
-                                    text = "Polling Print Logs",
+                                    text = "WebSocket Event Logs",
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
-                                    text = "Polling API every 5s",
+                                    text = "Realtime events via WebSocket",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                                 if (recentLogs.isEmpty()) {
                                     Text(
-                                        text = "No polling print logs yet",
+                                        text = "No WebSocket logs yet",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                     )

@@ -169,8 +169,16 @@ object PrinterManager {
                         }
                     }
                 } else {
-                    // Network (JetDirect/ESC/POS over TCP) path
-                    EscPosPrinterClient().printText(printer.host, printer.port, content)
+                    val connection = com.dantsu.escposprinter.connection.tcp.TcpConnection(printer.host, printer.port)
+                    val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
+                    val is80 = widthMm >= 72
+                    val chars = if (is80) 42 else 32
+                    val mm = if (is80) 72f else 48f
+                    val dpi = when (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM) { 12 -> 300; else -> 203 }
+                    val escpos = EscPosPrinter(connection, dpi, mm, chars)
+                    escpos.printFormattedText(content)
+                    escpos.printFormattedText("[C]\n[C]\n")
+                    true
                 }
                 if (ok) {
                     updateStatusesAfterPrint(context, order, printer)
