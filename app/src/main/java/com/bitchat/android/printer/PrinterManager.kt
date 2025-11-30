@@ -75,16 +75,27 @@ object PrinterManager {
 
         val sb = StringBuilder()
         if (printer.role == "station") {
+            val dt = formatDisplayDate(order.createdAt)
+            appendLineIfNotBlank(sb, "Order #${order.orderId}")
+            appendLineIfNotBlank(sb, "Note: ${order.globalNote ?: ""}")
+            appendLineIfNotBlank(sb, "Table: ${order.tableNumber ?: "N/A"}")
+            appendLineIfNotBlank(sb, "Delivery: ${order.deliveryMethod}")
+            appendLineIfNotBlank(sb, dt?.let { "Printed at: $it" })
+            val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
+            val is80 = widthMm >= 72
+            val line = "-".repeat(if (is80) 42 else 32)
+            sb.append("[C]$line\n")
+
             val grouped = filtered.groupBy { it.categoryId?.toIntOrNull() }
             grouped.forEach { (idInt, groupItems) ->
                 val catName = CategoriesApiService.getCategoryName(categories, idInt)
                 sb.append("[C]<b>${catName}</b>\n")
-                sb.append("[C]------------------------------\n")
+                sb.append("[C]$line\n")
                 groupItems.forEach { item ->
                     val variant = item.variant?.let { " ($it)" } ?: ""
-                    sb.append("${item.name}$variant x${item.quantity}\n")
+                    sb.append("[L]${item.name}$variant[R]x${item.quantity}\n")
                 }
-                sb.append("[C]------------------------------\n")
+                sb.append("[C]$line\n")
             }
             return sb.toString().trimEnd()
         } else {
