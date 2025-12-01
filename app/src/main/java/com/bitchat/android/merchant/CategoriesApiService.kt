@@ -16,6 +16,7 @@ object CategoriesApiService {
     private const val TAG = "CategoriesApiService"
     private const val CATEGORIES_URL = "https://node-client.realm.chat/api/product/categories"
     private val gson = Gson()
+    @Volatile private var cachedCategories: List<Category>? = null
 
     data class Category(
         val id: Int?, // null used for "Uncategorized"
@@ -45,14 +46,17 @@ object CategoriesApiService {
             val body = response.body?.string()
             if (!response.isSuccessful || body.isNullOrEmpty()) {
                 Log.w(TAG, "Categories request failed: code=${response.code}")
-                return@withContext emptyList()
+                val fallback = cachedCategories ?: emptyList()
+                return@withContext listOf(Category(id = null, name = "Uncategorized")) + fallback.filter { it.id != null }
             }
             val parsed = gson.fromJson(body, CategoriesResponse::class.java)
             val list = parsed.data?.map { Category(id = it.id, name = it.name) } ?: emptyList()
+            cachedCategories = list
             return@withContext listOf(Category(id = null, name = "Uncategorized")) + list
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch categories", e)
-            return@withContext emptyList()
+            val fallback = cachedCategories ?: emptyList()
+            return@withContext listOf(Category(id = null, name = "Uncategorized")) + fallback.filter { it.id != null }
         }
     }
 
@@ -61,5 +65,10 @@ object CategoriesApiService {
      */
     fun getCategoryName(categories: List<Category>, id: Int?): String {
         return categories.firstOrNull { it.id == id }?.name ?: (if (id == null) "Uncategorized" else "Unknown")
+    }
+
+    fun getCached(): List<Category> {
+        val list = cachedCategories ?: emptyList()
+        return listOf(Category(id = null, name = "Uncategorized")) + list
     }
 }

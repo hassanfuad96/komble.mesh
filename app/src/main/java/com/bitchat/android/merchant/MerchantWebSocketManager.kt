@@ -33,7 +33,7 @@ object MerchantWebSocketManager {
 
     private const val DEFAULT_WS_URL = "wss://komers-realtime-hub.bekreatif2020-4d4.workers.dev/ws"
     private const val KEY_AUTO_PRINT_EVENTS = "merchant_auto_print_events"
-    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("order.created", "paid", "order.paid")
+    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("order.created", "paid", "order.paid", "order.printed")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
@@ -91,10 +91,10 @@ object MerchantWebSocketManager {
         val selected = autoPrintEvents
         if (selected.contains("*")) return true
         if (!statusLower.isNullOrBlank() && selected.contains(statusLower)) return true
-        val ev = eventLower
-        if (ev.isNullOrBlank()) return false
-        if (selected.contains(ev)) return true
-        if (ev.startsWith("order.") && selected.contains("order.*")) return true
+        val ev = eventLower ?: return false
+        val norm = ev.replace('_', '.')
+        if (selected.contains(ev) || selected.contains(norm)) return true
+        if ((norm.startsWith("order.") || ev.startsWith("order_")) && selected.contains("order.*")) return true
         return false
     }
 
@@ -239,8 +239,9 @@ object MerchantWebSocketManager {
                             )
                         )
                     } catch (_: Exception) { }
+                    var dto: OrdersSyncWorker.OrderDto? = null
                     if (dataObj != null) {
-                        val dto = OrdersSyncWorker.OrderDto(
+                        dto = OrdersSyncWorker.OrderDto(
                             id = dataObj.get("id")?.let { try { it.asString } catch (_: Throwable) { null } },
                             orderId = orderId,
                             globalNote = dataObj.get("global_note")?.let { try { it.asString } catch (_: Throwable) { null } },
@@ -268,6 +269,7 @@ object MerchantWebSocketManager {
                                             },
                                             variant = pObj.get("variant")?.let { try { it.asString } catch (_: Throwable) { null } },
                                             categoryId = pObj.get("category_id")?.let { try { it.asString } catch (_: Throwable) { null } },
+                                            note = pObj.get("note")?.let { try { it.asString } catch (_: Throwable) { null } },
                                             prepared = pObj.get("prepared")?.let { 
                                                 try { it.asBoolean } catch (_: Throwable) { try { it.asInt != 0 } catch (_: Throwable) { null } }
                                             }
@@ -291,6 +293,7 @@ object MerchantWebSocketManager {
                                 quantity = (p.quantity ?: 0),
                                 variant = p.variant,
                                 categoryId = p.categoryId,
+                                note = p.note,
                                 prepared = (p.prepared ?: false)
                             )
                         }.orEmpty()
@@ -381,7 +384,7 @@ object MerchantWebSocketManager {
                             } catch (_: Exception) { }
                             return@launch
                         }
-                        val orderDto = OrdersSyncWorker.OrderDto(
+                        val orderDto = dto ?: OrdersSyncWorker.OrderDto(
                             id = null,
                             orderId = orderId,
                             globalNote = null,

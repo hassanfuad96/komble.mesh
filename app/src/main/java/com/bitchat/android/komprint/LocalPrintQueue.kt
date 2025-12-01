@@ -50,6 +50,7 @@ object LocalPrintQueue {
                                     quantity = it.qty,
                                     variant = null,
                                     categoryId = it.categoryId,
+                                    note = null,
                                     prepared = null
                                 )
                             }
@@ -62,6 +63,7 @@ object LocalPrintQueue {
                             quantity = (p.quantity ?: 0),
                             variant = p.variant,
                             categoryId = p.categoryId,
+                            note = p.note,
                             prepared = false
                         )
                     }.orEmpty()

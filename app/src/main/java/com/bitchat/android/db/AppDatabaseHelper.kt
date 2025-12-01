@@ -64,6 +64,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER,
                 variant TEXT,
                 category_id TEXT,
+                note TEXT,
                 prepared INTEGER DEFAULT 0
             );
             """.trimIndent()
@@ -168,6 +169,9 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                 """.trimIndent()
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_queue_status ON print_queue(status)")
+        }
+        if (oldVersion < 6) {
+            try { db.execSQL("ALTER TABLE order_items ADD COLUMN note TEXT") } catch (_: Exception) {}
         }
     }
 
@@ -274,6 +278,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                     put("quantity", item.quantity)
                     put("variant", item.variant)
                     put("category_id", item.categoryId)
+                    put("note", item.note)
                     put("prepared", if (item.prepared) 1 else 0)
                 }
                 db.insert("order_items", null, v)
@@ -330,12 +335,13 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         val quantity: Int,
         val variant: String?,
         val categoryId: String?,
+        val note: String?,
         val prepared: Boolean = false
     )
 
     companion object {
         private const val DB_NAME = "komble.db"
-        private const val DB_VERSION = 5
+        private const val DB_VERSION = 6
         @Volatile private var instance: AppDatabaseHelper? = null
         @JvmStatic
         fun getInstance(context: Context): AppDatabaseHelper = instance ?: synchronized(this) {
@@ -439,7 +445,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         val result = mutableListOf<OrderItem>()
         val c = readableDatabase.query(
             "order_items",
-            arrayOf("item_id", "name", "quantity", "variant", "category_id", "prepared"),
+            arrayOf("item_id", "name", "quantity", "variant", "category_id", "note", "prepared"),
             "order_id=?",
             arrayOf(orderId),
             null,
@@ -452,6 +458,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             val idxQty = it.getColumnIndex("quantity")
             val idxVariant = it.getColumnIndex("variant")
             val idxCat = it.getColumnIndex("category_id")
+            val idxNote = it.getColumnIndex("note")
             val idxPrepared = it.getColumnIndex("prepared")
             while (it.moveToNext()) {
                 result.add(
@@ -461,6 +468,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                         quantity = it.getInt(idxQty),
                         variant = if (idxVariant >= 0) it.getString(idxVariant) else null,
                         categoryId = if (idxCat >= 0) it.getString(idxCat) else null,
+                        note = if (idxNote >= 0) it.getString(idxNote) else null,
                         prepared = (if (idxPrepared >= 0) it.getInt(idxPrepared) else 0) == 1
                     )
                 )

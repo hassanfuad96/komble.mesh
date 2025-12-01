@@ -428,6 +428,7 @@ object MerchantOrdersPoller {
                             quantity = pObj.get("quantity")?.asIntOrNull(),
                             variant = pObj.get("variant")?.asStringOrNull(),
                             categoryId = pObj.get("category_id")?.asStringOrNull(),
+                            note = pObj.get("note")?.asStringOrNull(),
                             prepared = pObj.get("prepared")?.asBoolOrNull()
                         )
                     }
@@ -537,6 +538,7 @@ object MerchantOrdersPoller {
                 quantity = (p.quantity ?: 0),
                 variant = p.variant,
                 categoryId = p.categoryId,
+                note = p.note,
                 prepared = (p.prepared ?: false)
             )
         }.orEmpty()

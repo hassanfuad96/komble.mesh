@@ -915,14 +915,14 @@ fun AboutSheet(
                                                     }
                                                     // Per-printer categories UI
                                                     var showCat by remember(sp.id) { mutableStateOf(false) }
-                                                    var categories by remember(sp.id) { mutableStateOf<List<CategoriesApiService.Category>>(emptyList()) }
+                                                    var categories by remember(sp.id) { mutableStateOf<List<CategoriesApiService.Category>>(CategoriesApiService.getCached()) }
                                                     var catLoading by remember(sp.id) { mutableStateOf(false) }
                                                     var selectedIds by remember(sp.id) { mutableStateOf(sp.selectedCategoryIds ?: emptyList()) }
                                                     var includeUncat by remember(sp.id) { mutableStateOf(sp.uncategorizedSelected == true) }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                         OutlinedButton(onClick = {
                                                             showCat = !showCat
-                                                            if (showCat && categories.isEmpty() && !catLoading) {
+                                                            if (showCat && !catLoading) {
                                                                 catLoading = true
                                                                 coroutineScope.launch {
                                                                     val auth = MerchantAuthManager.getInstance(context).getAuthorizationHeader()

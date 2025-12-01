@@ -31,9 +31,11 @@ object PrinterManager {
 
     // Append a line only when it has non-blank content; trims trailing spaces
     private fun appendLineIfNotBlank(sb: StringBuilder, value: String?) {
-        if (!value.isNullOrBlank()) {
-            sb.append(value.trim()).append("\n")
-        }
+        val v = value?.trim()
+        if (v.isNullOrEmpty()) return
+        val l = v.lowercase()
+        if (l == "null" || l == "none") return
+        sb.append(v).append("\n")
     }
 
     suspend fun loadPrinters(context: Context): List<SavedPrinter> = withContext(Dispatchers.IO) {
@@ -94,6 +96,9 @@ object PrinterManager {
                 groupItems.forEach { item ->
                     val variant = item.variant?.let { " ($it)" } ?: ""
                     sb.append("[L]${item.name}$variant[R]x${item.quantity}\n")
+                    if (!item.note.isNullOrBlank()) {
+                        sb.append("  Note: ${item.note}\n")
+                    }
                 }
                 sb.append("[C]$line\n")
             }
@@ -121,7 +126,9 @@ object PrinterManager {
                 val qty = item.quantity
                 val variant = item.variant?.let { " ($it)" } ?: ""
                 sb.append("${item.name}$variant x$qty\n")
-                // Skip item note: no per-item note field in OrderItem
+                if (!item.note.isNullOrBlank()) {
+                    sb.append("  Note: ${item.note}\n")
+                }
                 sb.append("  [${catName}]\n")
             }
             sb.append("------------------------------\n")
@@ -172,6 +179,10 @@ object PrinterManager {
                                     else -> 203
                                 }
                                 val escpos = EscPosPrinter(connected, dpi, mm, chars)
+                                try {
+                                    val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
+                                    if (initBytes != null) connected.write(initBytes)
+                                } catch (_: Exception) { }
                                 escpos.printFormattedText(content)
                                 // Add a couple of newlines to advance paper slightly
                                 escpos.printFormattedText("[C]\n[C]\n")
@@ -202,7 +213,15 @@ object PrinterManager {
                     val mm = if (is80) 72f else 48f
                     val dpi = when (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM) { 12 -> 300; else -> 203 }
                     val escpos = EscPosPrinter(connection, dpi, mm, chars)
+                    try {
+                        val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
+                        if (initBytes != null) connection.write(initBytes)
+                    } catch (_: Exception) { }
                     escpos.printFormattedText(content)
+                    try {
+                        val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
+                        if (cutterBytes != null) connection.write(cutterBytes)
+                    } catch (_: Exception) { }
                     escpos.printFormattedText("[C]\n[C]\n")
                     true
                 }

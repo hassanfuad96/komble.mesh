@@ -44,6 +44,7 @@ object OrdersStoreHelper {
         val quantity: Int?,
         val variant: String?,
         @SerializedName("category_id") val categoryId: String?,
+        val note: String?,
         val prepared: Boolean?
     )
 
@@ -87,6 +88,7 @@ object OrdersStoreHelper {
                         quantity = (p.quantity ?: 0),
                         variant = p.variant,
                         categoryId = p.categoryId,
+                        note = p.note,
                         prepared = (p.prepared ?: false)
                     )
                 }.orEmpty()
