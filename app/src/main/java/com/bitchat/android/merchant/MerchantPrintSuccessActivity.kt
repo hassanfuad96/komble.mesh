@@ -46,6 +46,7 @@ fun MerchantPrintSuccessScreen() {
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     val whatsappGreen = Color(0xFF25D366)
     val surfaceDark = Color(0xFF1F1F1F)
+    var statusMessage by remember { mutableStateOf("") }
 
     fun refresh() {
         printed = AppDatabaseHelper(context).getOrdersByStatus("printed", 200)
@@ -67,41 +68,87 @@ fun MerchantPrintSuccessScreen() {
             fontFamily = FontFamily.Monospace
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { refresh() }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Refresh", fontFamily = FontFamily.Monospace) }
-            Button(onClick = {
-                scope.launch {
-                    printed.forEach { row ->
-                        try {
-                            val count = PrinterManager.printOrderById(context, row.orderId)
-                            if (count > 0) {
-                                val authMgr = MerchantAuthManager.getInstance(context)
-                                val auth = authMgr.getAuthorizationHeader()
-                                val userId = authMgr.getCurrentUser()?.id
-                                MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val narrow = maxWidth < 360.dp
+            if (narrow) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { refresh(); statusMessage = "Refreshed" }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black), modifier = Modifier.fillMaxWidth()) { Text("Refresh", fontFamily = FontFamily.Monospace, maxLines = 1) }
+                    Button(onClick = {
+                        scope.launch {
+                            printed.forEach { row ->
+                                try {
+                                    val count = PrinterManager.printOrderById(context, row.orderId)
+                                    if (count > 0) {
+                                        val authMgr = MerchantAuthManager.getInstance(context)
+                                        val auth = authMgr.getAuthorizationHeader()
+                                        val userId = authMgr.getCurrentUser()?.id
+                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                    }
+                                } catch (_: Exception) { }
                             }
-                        } catch (_: Exception) { }
-                    }
-                    refresh()
-                }
-            }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Reprint All", fontFamily = FontFamily.Monospace) }
-            Button(onClick = {
-                scope.launch {
-                    val targets = printed.filter { selected[it.orderId] == true }
-                    targets.forEach { row ->
-                        try {
-                            val count = PrinterManager.printOrderById(context, row.orderId)
-                            if (count > 0) {
-                                val authMgr = MerchantAuthManager.getInstance(context)
-                                val auth = authMgr.getAuthorizationHeader()
-                                val userId = authMgr.getCurrentUser()?.id
-                                MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                            refresh()
+                            statusMessage = "Reprinted ${printed.size}"
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black), modifier = Modifier.fillMaxWidth()) { Text("Reprint All", fontFamily = FontFamily.Monospace, maxLines = 1) }
+                    Button(onClick = {
+                        scope.launch {
+                            val targets = printed.filter { selected[it.orderId] == true }
+                            targets.forEach { row ->
+                                try {
+                                    val count = PrinterManager.printOrderById(context, row.orderId)
+                                    if (count > 0) {
+                                        val authMgr = MerchantAuthManager.getInstance(context)
+                                        val auth = authMgr.getAuthorizationHeader()
+                                        val userId = authMgr.getCurrentUser()?.id
+                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                    }
+                                } catch (_: Exception) { }
                             }
-                        } catch (_: Exception) { }
-                    }
-                    refresh()
+                            refresh()
+                            statusMessage = "Reprinted ${targets.size} selected"
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black), modifier = Modifier.fillMaxWidth()) { Text("Reprint Selected", fontFamily = FontFamily.Monospace, maxLines = 1) }
                 }
-            }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Reprint Selected", fontFamily = FontFamily.Monospace) }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { refresh(); statusMessage = "Refreshed" }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Refresh", fontFamily = FontFamily.Monospace, maxLines = 1) }
+                    Button(onClick = {
+                        scope.launch {
+                            printed.forEach { row ->
+                                try {
+                                    val count = PrinterManager.printOrderById(context, row.orderId)
+                                    if (count > 0) {
+                                        val authMgr = MerchantAuthManager.getInstance(context)
+                                        val auth = authMgr.getAuthorizationHeader()
+                                        val userId = authMgr.getCurrentUser()?.id
+                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                    }
+                                } catch (_: Exception) { }
+                            }
+                            refresh()
+                            statusMessage = "Reprinted ${printed.size}"
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Reprint All", fontFamily = FontFamily.Monospace, maxLines = 1) }
+                    Button(onClick = {
+                        scope.launch {
+                            val targets = printed.filter { selected[it.orderId] == true }
+                            targets.forEach { row ->
+                                try {
+                                    val count = PrinterManager.printOrderById(context, row.orderId)
+                                    if (count > 0) {
+                                        val authMgr = MerchantAuthManager.getInstance(context)
+                                        val auth = authMgr.getAuthorizationHeader()
+                                        val userId = authMgr.getCurrentUser()?.id
+                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                    }
+                                } catch (_: Exception) { }
+                            }
+                            refresh()
+                            statusMessage = "Reprinted ${targets.size} selected"
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Reprint Selected", fontFamily = FontFamily.Monospace, maxLines = 1) }
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -112,44 +159,94 @@ fun MerchantPrintSuccessScreen() {
                     border = BorderStroke(1.dp, whatsappGreen),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Row(modifier = Modifier.weight(1f)) {
-                            Checkbox(
-                                checked = selected[row.orderId] == true,
-                                onCheckedChange = { checked -> selected[row.orderId] = checked }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(imageVector = Icons.Outlined.CheckCircle, contentDescription = null, tint = whatsappGreen)
-                                    Text(text = "Order #${row.orderId}", style = MaterialTheme.typography.bodyLarge, color = Color(0xFFCCCCCC))
-                                }
-                                val created = row.createdAt ?: ""
-                                Text(text = created, style = MaterialTheme.typography.bodySmall, color = Color(0xFFAAAAAA))
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val isExpanded = expanded[row.orderId] == true
-                            Button(onClick = { expanded[row.orderId] = !isExpanded }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) {
-                                Icon(imageVector = if (isExpanded) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (isExpanded) "Hide" else "Details", fontFamily = FontFamily.Monospace)
-                            }
-                            Button(onClick = {
-                                scope.launch {
-                                    val count = PrinterManager.printOrderById(context, row.orderId)
-                                    if (count > 0) {
-                                        val authMgr = MerchantAuthManager.getInstance(context)
-                                        val auth = authMgr.getAuthorizationHeader()
-                                        val userId = authMgr.getCurrentUser()?.id
-                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                    BoxWithConstraints(Modifier.padding(12.dp).fillMaxWidth()) {
+                        val narrow = maxWidth < 360.dp
+                        if (narrow) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth()) {
+                                    Checkbox(
+                                        checked = selected[row.orderId] == true,
+                                        onCheckedChange = { checked -> selected[row.orderId] = checked }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Icon(imageVector = Icons.Outlined.CheckCircle, contentDescription = null, tint = whatsappGreen)
+                                            Text(text = "Order #${row.orderId}", style = MaterialTheme.typography.bodyLarge, color = Color(0xFFCCCCCC), maxLines = 1)
+                                        }
+                                        val created = row.createdAt ?: ""
+                                        Text(text = created, style = MaterialTheme.typography.bodySmall, color = Color(0xFFAAAAAA), maxLines = 1)
                                     }
-                                    refresh()
                                 }
-                            }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) {
-                                Icon(imageVector = Icons.Outlined.Print, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("Reprint", fontFamily = FontFamily.Monospace)
+                                Spacer(Modifier.height(8.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val isExpanded = expanded[row.orderId] == true
+                                    Button(onClick = { expanded[row.orderId] = !isExpanded }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black), modifier = Modifier.weight(1f)) {
+                                        Icon(imageVector = if (isExpanded) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(if (isExpanded) "Hide" else "Details", fontFamily = FontFamily.Monospace, maxLines = 1)
+                                    }
+                                    Button(onClick = {
+                                        scope.launch {
+                                            val count = PrinterManager.printOrderById(context, row.orderId)
+                                            if (count > 0) {
+                                                val authMgr = MerchantAuthManager.getInstance(context)
+                                                val auth = authMgr.getAuthorizationHeader()
+                                                val userId = authMgr.getCurrentUser()?.id
+                                                MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                            }
+                                            refresh()
+                                            statusMessage = if (count > 0) "Reprinted 1" else "Reprint failed"
+                                        }
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black), modifier = Modifier.weight(1f)) {
+                                        Icon(imageVector = Icons.Outlined.Print, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Reprint", fontFamily = FontFamily.Monospace, maxLines = 1)
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Row(modifier = Modifier.weight(1f)) {
+                                    Checkbox(
+                                        checked = selected[row.orderId] == true,
+                                        onCheckedChange = { checked -> selected[row.orderId] = checked }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Icon(imageVector = Icons.Outlined.CheckCircle, contentDescription = null, tint = whatsappGreen)
+                                            Text(text = "Order #${row.orderId}", style = MaterialTheme.typography.bodyLarge, color = Color(0xFFCCCCCC), maxLines = 1)
+                                        }
+                                        val created = row.createdAt ?: ""
+                                        Text(text = created, style = MaterialTheme.typography.bodySmall, color = Color(0xFFAAAAAA), maxLines = 1)
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val isExpanded = expanded[row.orderId] == true
+                                    Button(onClick = { expanded[row.orderId] = !isExpanded }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) {
+                                        Icon(imageVector = if (isExpanded) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(if (isExpanded) "Hide" else "Details", fontFamily = FontFamily.Monospace, maxLines = 1)
+                                    }
+                                    Button(onClick = {
+                                        scope.launch {
+                                            val count = PrinterManager.printOrderById(context, row.orderId)
+                                            if (count > 0) {
+                                                val authMgr = MerchantAuthManager.getInstance(context)
+                                                val auth = authMgr.getAuthorizationHeader()
+                                                val userId = authMgr.getCurrentUser()?.id
+                                                MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                            }
+                                            refresh()
+                                            statusMessage = if (count > 0) "Reprinted 1" else "Reprint failed"
+                                        }
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) {
+                                        Icon(imageVector = Icons.Outlined.Print, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Reprint", fontFamily = FontFamily.Monospace, maxLines = 1)
+                                    }
+                                }
                             }
                         }
                     }
@@ -172,6 +269,10 @@ fun MerchantPrintSuccessScreen() {
                 }
                 Spacer(Modifier.height(8.dp))
             }
+        }
+        if (statusMessage.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(text = statusMessage, color = Color(0xFFFFEB3B), fontFamily = FontFamily.Monospace)
         }
     }
 }

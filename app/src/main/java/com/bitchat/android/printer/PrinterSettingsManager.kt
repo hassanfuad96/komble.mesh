@@ -101,6 +101,13 @@ class PrinterSettingsManager(context: Context) {
         persistPrinters(updated)
     }
 
+    fun updatePrinterHostPort(id: String, host: String, port: Int) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(host = host.trim(), port = port) else p
+        }
+        persistPrinters(updated)
+    }
+
     fun setPrinterRole(id: String, role: String) {
         val target = if (role == "main" || role == "station") role else null
         val updated = getPrinters().map { p ->

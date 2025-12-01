@@ -590,6 +590,9 @@ fun AboutSheet(
                         val coroutineScope = rememberCoroutineScope()
                         var lastTestMessage by remember { mutableStateOf<String?>(null) }
                         var showAdvanced by remember { mutableStateOf(false) }
+                        val availableAutoEvents = remember { listOf("paid","printed","ready","order.paid","order.printed","order.ready","order.*","*") }
+                        var selectedAutoEvents by remember { mutableStateOf<Set<String>>(emptySet()) }
+                        var wsEnabled by remember { mutableStateOf(com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) }
                         // Bluetooth printers state
                         var btPrinters by remember { mutableStateOf<List<BluetoothConnection>>(emptyList()) }
                         var selectedBtPrinter by remember { mutableStateOf<BluetoothConnection?>(null) }
@@ -603,6 +606,9 @@ fun AboutSheet(
                                 recentLogs.addAll(wsOnly)
                                 delay(2000)
                             }
+                        }
+                        LaunchedEffect(Unit) {
+                            selectedAutoEvents = com.bitchat.android.merchant.MerchantWebSocketManager.getAutoPrintEvents(context)
                         }
                         val defaultPrinter = savedPrinters.firstOrNull { it.id == defaultPrinterId }
                         var paperWidth by remember { mutableStateOf((defaultPrinter?.paperWidthMm ?: 80).toString()) }
@@ -635,6 +641,78 @@ fun AboutSheet(
                                     .fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                // WebSocket connection status and toggle
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, accentGreen)
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .padding(12.dp)
+                                            .fillMaxWidth()
+                                            .heightIn(min = 56.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            Modifier.weight(1f),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(color = if (com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) accentGreen else Color(0xFFFF5252), shape = CircleShape) { Box(Modifier.size(10.dp)) }
+                                            Text(
+                                                text = "WebSocket",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) "Connected" else "Disconnected",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = if (com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) accentGreen else Color(0xFFFF5252),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Switch(
+                                            checked = wsEnabled,
+                                            onCheckedChange = { checked ->
+                                                wsEnabled = checked
+                                                if (checked) com.bitchat.android.merchant.MerchantWebSocketManager.start(context) else com.bitchat.android.merchant.MerchantWebSocketManager.stop()
+                                            }
+                                        )
+                                    }
+                                }
+                                // Auto Print Events selection
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, accentGreen)
+                                ) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(text = "Auto Print Events", style = MaterialTheme.typography.titleSmall)
+                                        availableAutoEvents.forEach { opt ->
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Checkbox(checked = selectedAutoEvents.contains(opt), onCheckedChange = { checked ->
+                                                    selectedAutoEvents = if (checked) selectedAutoEvents + opt else selectedAutoEvents - opt
+                                                })
+                                                Text(opt, fontFamily = FontFamily.Monospace)
+                                            }
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Button(onClick = {
+                                                com.bitchat.android.merchant.MerchantWebSocketManager.setAutoPrintEvents(context, selectedAutoEvents)
+                                                lastTestMessage = "Auto print events saved"
+                                            }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text("Save", fontFamily = FontFamily.Monospace) }
+                                            Text(text = if (com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) "WS:connected" else "WS:disconnected", color = if (com.bitchat.android.merchant.MerchantWebSocketManager.isConnected()) accentGreen else Color(0xFFFF5252), fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                }
                                 // Saved printers card
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
@@ -648,96 +726,32 @@ fun AboutSheet(
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Medium
                                         )
-                                        if (savedPrinters.isNotEmpty()) {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                OutlinedButton(
-                                                    enabled = !isTesting,
-                                                    onClick = {
-                                                        isTesting = true
-                                                        coroutineScope.launch {
-                                                            var okCount = 0
-                                                            val total = savedPrinters.size
-                                                            val db = com.bitchat.android.db.AppDatabaseHelper(context)
-                                                            for (sp in savedPrinters) {
-                                                                val ok = EscPosPrinterClient().sendTestReceipt(
-                                                                    host = sp.host,
-                                                                    port = sp.port,
-                                                                    initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex),
-                                                                    cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex)
-                                                                )
-                                                                db.insertPrintLog(
-                                                                    PrintLog(
-                                                                        printerId = sp.id,
-                                                                        host = sp.host,
-                                                                        port = sp.port,
-                                                                        label = sp.label,
-                                                                        type = "escpos_test",
-                                                                        success = ok
-                                                                    )
-                                                                )
-                                                                if (ok) okCount++
-                                                            }
-                                                            isTesting = false
-                                                            lastTestMessage = "ESC/POS test (all): $okCount/$total succeeded"
-                                                        }
-                                                    },
-                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                                    border = BorderStroke(1.dp, accentGreen)
-                                                ) { Text(if (isTesting) "Testing…" else "ESC/POS Test (All)", fontFamily = FontFamily.Monospace) }
-                                                OutlinedButton(
-                                                    enabled = !isTesting,
-                                                    onClick = {
-                                                        isTesting = true
-                                                        coroutineScope.launch {
-                                                            var okCount = 0
-                                                            val total = savedPrinters.size
-                                                            val db = com.bitchat.android.db.AppDatabaseHelper(context)
-                                                            for (sp in savedPrinters) {
-                                                                val ok = try {
-                                                                    withTimeout(8000) {
-                                                                        if (sp.port == 631) {
-                                                                            IppPrintClient().sendTextPage(sp.host, sp.port)
-                                                                        } else {
-                                                                            JetDirectTextPrinterClient().sendTextPage(
-                                                                                host = sp.host,
-                                                                                port = sp.port,
-                                                                                text = "Bitchat Test Page\r\nMerchant Connected\r\nTime: ${System.currentTimeMillis()}\r\n"
-                                                                            )
-                                                                        }
-                                                                    }
-                                                                } catch (_: TimeoutCancellationException) { false }
-                                                                db.insertPrintLog(
-                                                                    PrintLog(
-                                                                        printerId = sp.id,
-                                                                        host = sp.host,
-                                                                        port = sp.port,
-                                                                        label = sp.label,
-                                                                        type = if (sp.port == 631) "ipp_text" else "text_test",
-                                                                        success = ok
-                                                                    )
-                                                                )
-                                                                if (ok) okCount++
-                                                            }
-                                                            isTesting = false
-                                                            lastTestMessage = "Text test (all): $okCount/$total succeeded"
-                                                        }
-                                                    },
-                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                                    border = BorderStroke(1.dp, accentGreen)
-                                                ) { Text(if (isTesting) "Testing…" else "Text Test (All)", fontFamily = FontFamily.Monospace) }
-                                            }
-                                        }
+                                        // Removed global tests: ESC/POS Test (All), Text Test (All)
                                         if (savedPrinters.isNotEmpty()) {
                                             savedPrinters.forEach { sp ->
                                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                     val isBt = sp.port == 0 || sp.host.matches(Regex("(?i)^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"))
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(imageVector = if (isBt) Icons.Filled.Bluetooth else Icons.Filled.Wifi, contentDescription = null, tint = accentGreen)
-                                                        Text(
-                                                            text = "${sp.label?.let { "$it — " } ?: ""}${sp.name ?: if (isBt) "Bluetooth ESC/POS" else "ESC/POS"} — ${sp.host}:${sp.port}" + if (sp.id == defaultPrinterId) " • Default" else "",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                                                        )
+                                                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(imageVector = if (isBt) Icons.Filled.Bluetooth else Icons.Filled.Wifi, contentDescription = null, tint = accentGreen)
+                                                            Text(
+                                                                text = "${sp.label?.let { "$it — " } ?: ""}${sp.name ?: if (isBt) "Bluetooth ESC/POS" else "ESC/POS"} — ${sp.host}:${sp.port}" + if (sp.id == defaultPrinterId) " • Default" else "",
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                        var autoEnabled by remember(sp.id) { mutableStateOf(sp.autoPrintEnabled != false) }
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Auto", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+                                                            Switch(checked = autoEnabled, onCheckedChange = { chk ->
+                                                                autoEnabled = chk
+                                                                printerSettings.setPrinterAutoPrint(sp.id, chk)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(autoPrintEnabled = chk)
+                                                            })
+                                                        }
                                                     }
                                                     // Role selector: Main vs Station
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -772,145 +786,175 @@ fun AboutSheet(
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                                     )
-                                                    
-                                                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    if (isBt) {
-                                                        Button(
-                                                            enabled = !isTesting,
-                                                            onClick = {
-                                                                isTesting = true
-                                                                coroutineScope.launch {
-                                                                    try {
-                                                                        val list = BluetoothPrintersConnections().getList()?.toList() ?: emptyList()
-                                                                        val conn = list.firstOrNull { it.device?.address == sp.host }
-                                                                        val connected = conn?.connect() ?: BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(sp.host)?.let { dev ->
-                                                                            com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection(dev).connect()
-                                                                        }
-                                                                        if (connected == null) throw IllegalStateException("BT not found")
-                                                                        val printer = EscPosPrinter(connected, 203, 48f, 32)
-                                                                        printer.printFormattedText("[C]<b>BT Test</b>\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n")
-                                                                        printer.printFormattedText("[C]\n[C]\n")
-                                                                        lastTestMessage = "Bluetooth test printed"
-                                                                        AppDatabaseHelper(context).insertPrintLog(
-                                                                            PrintLog(
-                                                                                printerId = sp.id,
-                                                                                host = sp.host,
-                                                                                port = 0,
-                                                                                label = sp.label,
-                                                                                type = "bt_escpos_test",
-                                                                                success = true
-                                                                            )
-                                                                        )
-                                                                    } catch (t: Throwable) {
-                                                                        lastTestMessage = "BT test failed: ${t.message}"
-                                                                        AppDatabaseHelper(context).insertPrintLog(
-                                                                            PrintLog(
-                                                                                printerId = sp.id,
-                                                                                host = sp.host,
-                                                                                port = 0,
-                                                                                label = sp.label,
-                                                                                type = "bt_escpos_test",
-                                                                                success = false
-                                                                            )
-                                                                        )
-                                                                    }
-                                                                    isTesting = false
-                                                                }
-                                                            }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)
-                                                        ) { Text(if (isTesting) "Testing…" else "BT Test", fontFamily = FontFamily.Monospace) }
-                                                    } else {
-                                                        Button(
-                                                            enabled = !isTesting,
-                                                            onClick = {
-                                                                isTesting = true
-                                                                    coroutineScope.launch {
-                                                                        val ok = EscPosPrinterClient().sendTestReceipt(
-                                                                            host = sp.host,
-                                                                            port = sp.port,
-                                                                            initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex),
-                                                                            cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex)
-                                                                        )
-                                                                        isTesting = false
-                                                                        lastTestMessage = if (ok) "ESC/POS test succeeded" else "ESC/POS test failed"
-                                                                        AppDatabaseHelper(context).insertPrintLog(
-                                                                            PrintLog(
-                                                                                printerId = sp.id,
-                                                                                host = sp.host,
-                                                                                port = sp.port,
-                                                                                label = sp.label,
-                                                                                type = "escpos_test",
-                                                                                success = ok
-                                                                            )
-                                                                        )
-                                                                    }
-                                                                }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)
-                                                            ) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
-                                                            OutlinedButton(
-                                                                enabled = !isTesting,
-                                                                onClick = {
-                                                                    isTesting = true
-                                                                    coroutineScope.launch {
-                                                                        val ok = try {
-                                                                            withTimeout(8000) {
-                                                                                if (sp.port == 631) {
-                                                                                    IppPrintClient().sendTextPage(
-                                                                                        host = sp.host,
-                                                                                        port = sp.port
-                                                                                    )
-                                                                                } else {
-                                                                                    JetDirectTextPrinterClient().sendTextPage(
-                                                                                        host = sp.host,
-                                                                                        port = sp.port,
-                                                                                        text = "Bitchat Test Page\r\nMerchant Connected\r\nTime: ${System.currentTimeMillis()}\r\n"
-                                                                                    )
-                                                                                }
+                                                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                                        val narrow = maxWidth < 360.dp
+                                                        if (narrow) {
+                                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                if (isBt) {
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            try {
+                                                                                val list = BluetoothPrintersConnections().getList()?.toList() ?: emptyList()
+                                                                                val conn = list.firstOrNull { it.device?.address == sp.host }
+                                                                                val connected = conn?.connect() ?: BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(sp.host)?.let { dev -> com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection(dev).connect() }
+                                                                                if (connected == null) throw IllegalStateException("BT not found")
+                                                                                val printer = EscPosPrinter(connected, 203, 48f, 32)
+                                                                                printer.printFormattedText("[C]<b>BT Test</b>\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n")
+                                                                                printer.printFormattedText("[C]\n[C]\n")
+                                                                                lastTestMessage = "Bluetooth test printed"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = 0, label = sp.label, type = "bt_escpos_test", success = true))
+                                                                            } catch (t: Throwable) {
+                                                                                lastTestMessage = "BT test failed: ${t.message}"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = 0, label = sp.label, type = "bt_escpos_test", success = false))
                                                                             }
-                                                                        } catch (_: TimeoutCancellationException) {
-                                                                            false
+                                                                            isTesting = false
                                                                         }
-                                                                        isTesting = false
-                                                                        lastTestMessage = if (ok) {
-                                                                            if (sp.port == 631) "Text print succeeded (IPP)" else "Text print succeeded (JetDirect)"
-                                                                        } else "Text print failed"
-                                                                        AppDatabaseHelper(context).insertPrintLog(
-                                                                            PrintLog(
-                                                                                printerId = sp.id,
-                                                                                host = sp.host,
-                                                                                port = sp.port,
-                                                                                label = sp.label,
-                                                                                type = if (sp.port == 631) "ipp_text" else "text_test",
-                                                                                success = ok
-                                                                            )
-                                                                        )
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "BT Test", fontFamily = FontFamily.Monospace) }
+                                                                } else {
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            val ok = EscPosPrinterClient().sendTestReceipt(host = sp.host, port = sp.port, initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex), cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex))
+                                                                            isTesting = false
+                                                                            lastTestMessage = if (ok) "ESC/POS test succeeded" else "ESC/POS test failed"
+                                                                            AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "escpos_test", success = ok))
+                                                                        }
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
+                                                                }
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    OutlinedButton(onClick = { confirmDeleteId = sp.id }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete"); Text("Delete", fontFamily = FontFamily.Monospace) } }
+                                                                    if (sp.id != defaultPrinterId) {
+                                                                        OutlinedButton(onClick = {
+                                                                            printerSettings.setDefaultPrinterId(sp.id)
+                                                                            defaultPrinterId = sp.id
+                                                                            paperWidth = (sp.paperWidthMm ?: 80).toString()
+                                                                            dotsPerMm = (sp.dotsPerMm ?: 8).toString()
+                                                                            initHex = sp.initHex ?: "1B,40"
+                                                                            cutterHex = sp.cutterHex ?: "1D,56,42,00"
+                                                                            drawerHex = sp.drawerHex ?: "1B,70,00,19,FA"
+                                                                        }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text("Set Default", fontFamily = FontFamily.Monospace) }
                                                                     }
-                                                                }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)
-                                                            ) { Text(if (isTesting) "Testing…" else "Text Test", fontFamily = FontFamily.Monospace) }
-                                                    }
-                                                        OutlinedButton(
-                                                            onClick = { confirmDeleteId = sp.id },
-                                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                                            border = BorderStroke(1.dp, accentGreen)
-                                                        ) {
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                                Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete")
-                                                                Text("Delete", fontFamily = FontFamily.Monospace)
+                                                                }
+                                                            }
+                                                        } else {
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                if (isBt) {
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            try {
+                                                                                val list = BluetoothPrintersConnections().getList()?.toList() ?: emptyList()
+                                                                                val conn = list.firstOrNull { it.device?.address == sp.host }
+                                                                                val connected = conn?.connect() ?: BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(sp.host)?.let { dev -> com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection(dev).connect() }
+                                                                                if (connected == null) throw IllegalStateException("BT not found")
+                                                                                val printer = EscPosPrinter(connected, 203, 48f, 32)
+                                                                                printer.printFormattedText("[C]<b>BT Test</b>\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n")
+                                                                                printer.printFormattedText("[C]\n[C]\n")
+                                                                                lastTestMessage = "Bluetooth test printed"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = 0, label = sp.label, type = "bt_escpos_test", success = true))
+                                                                            } catch (t: Throwable) {
+                                                                                lastTestMessage = "BT test failed: ${t.message}"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = 0, label = sp.label, type = "bt_escpos_test", success = false))
+                                                                            }
+                                                                            isTesting = false
+                                                                        }
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "BT Test", fontFamily = FontFamily.Monospace) }
+                                                                } else {
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            val ok = EscPosPrinterClient().sendTestReceipt(host = sp.host, port = sp.port, initBytes = EscPosUtils.parseHexCsv(sp.initHex ?: initHex), cutterBytes = EscPosUtils.parseHexCsv(sp.cutterHex ?: cutterHex))
+                                                                            isTesting = false
+                                                                            lastTestMessage = if (ok) "ESC/POS test succeeded" else "ESC/POS test failed"
+                                                                            AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "escpos_test", success = ok))
+                                                                        }
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
+                                                                }
+                                                                OutlinedButton(onClick = { confirmDeleteId = sp.id }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete"); Text("Delete", fontFamily = FontFamily.Monospace) } }
+                                                                if (sp.id != defaultPrinterId) {
+                                                                    OutlinedButton(onClick = {
+                                                                        printerSettings.setDefaultPrinterId(sp.id)
+                                                                        defaultPrinterId = sp.id
+                                                                        paperWidth = (sp.paperWidthMm ?: 80).toString()
+                                                                        dotsPerMm = (sp.dotsPerMm ?: 8).toString()
+                                                                        initHex = sp.initHex ?: "1B,40"
+                                                                        cutterHex = sp.cutterHex ?: "1D,56,42,00"
+                                                                        drawerHex = sp.drawerHex ?: "1B,70,00,19,FA"
+                                                                    }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text("Set Default", fontFamily = FontFamily.Monospace) }
+                                                                }
                                                             }
                                                         }
-                                                        if (sp.id != defaultPrinterId) {
-                                                            OutlinedButton(
-                                                                onClick = {
-                                                                    printerSettings.setDefaultPrinterId(sp.id)
-                                                                    defaultPrinterId = sp.id
-                                                                    // Update advanced defaults to this printer
-                                                                    paperWidth = (sp.paperWidthMm ?: 80).toString()
-                                                                    dotsPerMm = (sp.dotsPerMm ?: 8).toString()
-                                                                    initHex = sp.initHex ?: "1B,40"
-                                                                    cutterHex = sp.cutterHex ?: "1D,56,42,00"
-                                                                    drawerHex = sp.drawerHex ?: "1B,70,00,19,FA"
-                                                                },
-                                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                                                border = BorderStroke(1.dp, accentGreen)
-                                                            ) { Text("Set Default", fontFamily = FontFamily.Monospace) }
+                                                    }
+                                                    // Edit IP/Port for existing printer
+                                                    var editMode by remember(sp.id) { mutableStateOf(false) }
+                                                    var editHost by remember(sp.id) { mutableStateOf(sp.host) }
+                                                    var editPortText by remember(sp.id) { mutableStateOf(sp.port.toString()) }
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        OutlinedButton(onClick = { editMode = !editMode }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text(if (editMode) "Cancel Edit" else "Edit IP/Port", fontFamily = FontFamily.Monospace) }
+                                                        if (editMode) {
+                                                            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                                                val narrow = maxWidth < 360.dp
+                                                                if (narrow) {
+                                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                        OutlinedTextField(
+                                                                            value = editHost,
+                                                                            onValueChange = { editHost = it },
+                                                                            label = { Text("IP / Hostname") },
+                                                                            singleLine = true,
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            
+                                                                            colors = OutlinedTextFieldDefaults.colors(
+                                                                                focusedBorderColor = accentGreen,
+                                                                                unfocusedBorderColor = accentGreen.copy(alpha = 0.6f),
+                                                                                cursorColor = accentGreen,
+                                                                                focusedLabelColor = accentGreen
+                                                                            )
+                                                                        )
+                                                                        OutlinedTextField(
+                                                                            value = editPortText,
+                                                                            onValueChange = { editPortText = it.filter { ch -> ch.isDigit() }.take(5) },
+                                                                            label = { Text("Port") },
+                                                                            singleLine = true,
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            
+                                                                            colors = OutlinedTextFieldDefaults.colors(
+                                                                                focusedBorderColor = accentGreen,
+                                                                                unfocusedBorderColor = accentGreen.copy(alpha = 0.6f),
+                                                                                cursorColor = accentGreen,
+                                                                                focusedLabelColor = accentGreen
+                                                                            )
+                                                                        )
+                                                                    }
+                                                                } else {
+                                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                        OutlinedTextField(
+                                                                            value = editHost,
+                                                                            onValueChange = { editHost = it },
+                                                                            label = { Text("IP / Hostname") },
+                                                                            singleLine = true,
+                                                                            modifier = Modifier.weight(1f),
+                                                                            
+                                                                        )
+                                                                        OutlinedTextField(
+                                                                            value = editPortText,
+                                                                            onValueChange = { editPortText = it.filter { ch -> ch.isDigit() }.take(5) },
+                                                                            label = { Text("Port") },
+                                                                            singleLine = true,
+                                                                            modifier = Modifier.width(120.dp),
+                                                                            
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                            OutlinedButton(onClick = {
+                                                                val newPort = editPortText.toIntOrNull() ?: sp.port
+                                                                printerSettings.updatePrinterHostPort(sp.id, editHost.trim(), newPort)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(host = editHost.trim(), port = newPort)
+                                                                lastTestMessage = "Updated ${sp.label ?: sp.name ?: "Printer"} to ${editHost.trim()}:${newPort}"
+                                                                editMode = false
+                                                            }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text("Save", fontFamily = FontFamily.Monospace) }
                                                         }
                                                     }
                                                     // Per-printer categories UI

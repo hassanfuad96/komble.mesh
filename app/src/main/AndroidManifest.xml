@@ -85,17 +85,6 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".merchant.MerchantTerminalActivity"
-            android:exported="true"
-            android:theme="@style/Theme.BitchatAndroid"
-            android:windowSoftInputMode="adjustResize">
-            <!-- Add a launcher entry so users can open the internal terminal page -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        <activity
             android:name=".merchant.MerchantPrintFailuresActivity"
             android:exported="false"
             android:theme="@style/Theme.BitchatAndroid"
