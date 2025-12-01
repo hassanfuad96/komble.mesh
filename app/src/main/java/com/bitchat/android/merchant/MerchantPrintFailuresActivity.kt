@@ -4,13 +4,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Autorenew
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.bitchat.android.db.AppDatabaseHelper
@@ -29,6 +39,8 @@ fun MerchantPrintFailuresScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     var failures by remember { mutableStateOf(listOf<AppDatabaseHelper.OrderRow>()) }
     val scope = rememberCoroutineScope()
+    val whatsappGreen = Color(0xFF25D366)
+    val surfaceDark = Color(0xFF1F1F1F)
 
     fun refresh() {
         // Include both explicit print failures and orders that are paid (awaiting print)
@@ -37,15 +49,16 @@ fun MerchantPrintFailuresScreen() {
 
     LaunchedEffect(Unit) { refresh() }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF111111)).padding(16.dp)) {
         Text(
             text = "Print Failures",
             style = MaterialTheme.typography.titleLarge,
+            color = whatsappGreen,
             fontFamily = FontFamily.Monospace
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { refresh() }) { Text("Refresh") }
+            Button(onClick = { refresh() }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Refresh", fontFamily = FontFamily.Monospace) }
             Button(onClick = {
                 scope.launch {
                     failures.forEach { row ->
@@ -60,30 +73,44 @@ fun MerchantPrintFailuresScreen() {
                     }
                     refresh()
                 }
-            }) { Text("Retry All") }
+            }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Retry All", fontFamily = FontFamily.Monospace) }
         }
         Spacer(Modifier.height(12.dp))
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(failures) { row ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Order #${row.orderId}", style = MaterialTheme.typography.bodyLarge)
-                        val created = row.createdAt ?: ""
-                        Text(text = created, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            scope.launch {
-                                val count = PrinterManager.printOrderById(context, row.orderId)
-                                if (count > 0) {
-                                    val authMgr = MerchantAuthManager.getInstance(context)
-                                    val auth = authMgr.getAuthorizationHeader()
-                                    val userId = authMgr.getCurrentUser()?.id
-                                    MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
-                                }
-                                refresh()
+                Surface(
+                    color = surfaceDark,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, whatsappGreen),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(imageVector = Icons.Outlined.ErrorOutline, contentDescription = null, tint = Color(0xFFFF5252))
+                                Text(text = "Order #${row.orderId}", style = MaterialTheme.typography.bodyLarge, color = Color(0xFFCCCCCC))
                             }
-                        }) { Text("Retry") }
+                            val created = row.createdAt ?: ""
+                            Text(text = created, style = MaterialTheme.typography.bodySmall, color = Color(0xFFAAAAAA))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                scope.launch {
+                                    val count = PrinterManager.printOrderById(context, row.orderId)
+                                    if (count > 0) {
+                                        val authMgr = MerchantAuthManager.getInstance(context)
+                                        val auth = authMgr.getAuthorizationHeader()
+                                        val userId = authMgr.getCurrentUser()?.id
+                                        MerchantOrderStatusApi.markPrinted(row.orderId, auth, userId)
+                                    }
+                                    refresh()
+                                }
+                            }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) {
+                                Icon(imageVector = Icons.Outlined.Autorenew, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Retry", fontFamily = FontFamily.Monospace)
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))

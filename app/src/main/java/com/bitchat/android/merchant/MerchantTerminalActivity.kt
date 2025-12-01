@@ -13,6 +13,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Switch
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,6 +54,9 @@ fun MerchantTerminalScreen() {
     val availableAutoEvents = remember { listOf("paid","printed","ready","order.paid","order.printed","order.ready","order.*","*") }
     var selectedAutoEvents by remember { mutableStateOf<Set<String>>(emptySet()) }
     var savedPrinters by remember { mutableStateOf<List<com.bitchat.android.printer.SavedPrinter>>(emptyList()) }
+    val whatsappGreen = Color(0xFF25D366)
+    val whatsappDark = Color(0xFF128C7E)
+    val surfaceDark = Color(0xFF1F1F1F)
 
     LaunchedEffect(Unit) {
         selectedAutoEvents = MerchantWebSocketManager.getAutoPrintEvents(context)
@@ -65,37 +73,57 @@ fun MerchantTerminalScreen() {
             .background(Color(0xFF111111))
             .padding(12.dp)
     ) {
-        Text(
-            text = "Merchant Terminal",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color(0xFF00E676)
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // Place action buttons prominently below the header to avoid clipping on narrow screens
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                try { context.startActivity(android.content.Intent(context, MerchantPrintFailuresActivity::class.java)) } catch (_: Exception) { }
-            }) { Text("Print Failures") }
-            Button(onClick = {
-                try { context.startActivity(android.content.Intent(context, MerchantPrintSuccessActivity::class.java)) } catch (_: Exception) { }
-            }) { Text("Print Success") }
-            Button(onClick = {
-                scope.launch {
-                    try {
-                        AppDatabaseHelper(context).clearLogs()
-                        logs = emptyList()
-                        statusMessage = "Logs cleared"
-                    } catch (_: Exception) { }
-                }
-            }) { Text("Clear Logs") }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                text = "Merchant Terminal\nPrinter Status",
+                style = MaterialTheme.typography.titleLarge,
+                color = whatsappGreen
+            )
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        try {
+                            AppDatabaseHelper(context).clearLogs()
+                            logs = emptyList()
+                            statusMessage = "Logs cleared"
+                        } catch (_: Exception) { }
+                    }
+                },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = whatsappGreen),
+                border = BorderStroke(1.dp, whatsappGreen)
+            ) { Text("Clear Logs", fontFamily = FontFamily.Monospace) }
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        Surface(
+            color = surfaceDark,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, whatsappGreen),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(14.dp).background(if (MerchantWebSocketManager.isConnected()) whatsappGreen else Color(0xFFFF5252), RoundedCornerShape(7.dp)))
+                    Text(text = "Websocket Connection:", color = Color(0xFFCCCCCC), fontFamily = FontFamily.Monospace)
+                    Text(text = if (MerchantWebSocketManager.isConnected()) "Connected" else "Disconnected", color = Color.White, fontFamily = FontFamily.Monospace)
+                }
+                var wsEnabled by remember { mutableStateOf(MerchantWebSocketManager.isConnected()) }
+                Switch(checked = wsEnabled, onCheckedChange = { checked ->
+                    wsEnabled = checked
+                    scope.launch {
+                        if (checked) MerchantWebSocketManager.start(context) else MerchantWebSocketManager.stop()
+                    }
+                })
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
 
-        Text(text = "Auto Print Events", color = Color(0xFF80D8FF))
+        Text(text = "Auto Print Events", color = whatsappGreen)
         Spacer(Modifier.height(4.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Surface(color = surfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, whatsappGreen), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             availableAutoEvents.forEach { opt ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Checkbox(
@@ -113,15 +141,17 @@ fun MerchantTerminalScreen() {
                         MerchantWebSocketManager.setAutoPrintEvents(context, selectedAutoEvents)
                         statusMessage = "Auto print updated"
                     }
-                }) { Text("Save") }
+                }, colors = ButtonDefaults.buttonColors(containerColor = whatsappGreen, contentColor = Color.Black)) { Text("Save", fontFamily = FontFamily.Monospace) }
                 val connected = MerchantWebSocketManager.isConnected()
-                Text(text = if (connected) "WS:connected" else "WS:disconnected", color = if (connected) Color(0xFF00E676) else Color(0xFFFF5252), fontFamily = FontFamily.Monospace)
+                Text(text = if (connected) "WS:connected" else "WS:disconnected", color = if (connected) whatsappGreen else Color(0xFFFF5252), fontFamily = FontFamily.Monospace)
             }
         }
+        }
+
         Spacer(Modifier.height(8.dp))
 
         if (savedPrinters.isNotEmpty()) {
-            Text(text = "Per-Printer Auto Print", color = Color(0xFF80D8FF))
+            Text(text = "Per-Printer Auto Print", color = whatsappGreen)
             Spacer(Modifier.height(4.dp))
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 savedPrinters.forEach { sp ->
@@ -218,7 +248,7 @@ fun MerchantTerminalScreen() {
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-            Text(text = "Recent Print Logs (latest 100)", color = Color(0xFF80D8FF))
+            Text(text = "Recent Print Logs (latest 100)", color = whatsappGreen)
         }
         Spacer(Modifier.height(4.dp))
         LazyColumn(
