@@ -726,6 +726,15 @@ fun AboutSheet(
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Medium
                                         )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    try { val i = android.content.Intent(context, com.bitchat.android.merchant.MerchantAutoPrintIssuesActivity::class.java); context.startActivity(i) } catch (_: Exception) {}
+                                                },
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
+                                                border = BorderStroke(1.dp, accentGreen)
+                                            ) { Text("Auto Print Issues", fontFamily = FontFamily.Monospace) }
+                                        }
                                         // Removed global tests: ESC/POS Test (All), Text Test (All)
                                         if (savedPrinters.isNotEmpty()) {
                                             savedPrinters.forEach { sp ->

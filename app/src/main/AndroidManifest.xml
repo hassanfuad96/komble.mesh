@@ -95,6 +95,11 @@
             android:theme="@style/Theme.BitchatAndroid"
             android:windowSoftInputMode="adjustResize" />
         <activity
+            android:name=".merchant.MerchantAutoPrintIssuesActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".komprint.KomPrintActivity"
             android:exported="true"
             android:theme="@style/Theme.BitchatAndroid"
