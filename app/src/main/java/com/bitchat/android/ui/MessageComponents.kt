@@ -149,10 +149,12 @@ fun MessageItem(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
-    // Determine if this message was sent by the current user
+    // Determine if this message was sent by the current user (normalize '@' and hash suffix)
+    val normalizedMe = currentUserNickname.removePrefix("@")
+    val senderBase = splitSuffix(message.sender.removePrefix("@")).first
     val isSelf = message.senderPeerID == meshService.myPeerID ||
-            message.sender == currentUserNickname ||
-            message.sender.startsWith("$currentUserNickname#")
+            senderBase == normalizedMe ||
+            message.sender.removePrefix("@").startsWith("$normalizedMe#")
     
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -161,7 +163,8 @@ fun MessageItem(
         Box(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
             ) {
                 // Provide a small end padding for own private messages so overlay doesn't cover text
                 val endPad = if (message.isPrivate && isSelf) 16.dp else 0.dp
@@ -183,10 +186,8 @@ fun MessageItem(
                             .fillMaxWidth(0.85f)
                             .padding(end = endPad)
                     )
-                    Spacer(modifier = Modifier.weight(1f))
                 } else {
                     // Right side (self)
-                    Spacer(modifier = Modifier.weight(1f))
                     MessageTextWithClickableNicknames(
                         message = message,
                         messages = messages,
@@ -199,7 +200,7 @@ fun MessageItem(
                         onCancelTransfer = onCancelTransfer,
                         onImageClick = onImageClick,
                         modifier = Modifier
-                            .fillMaxWidth(0.85f)
+                            .wrapContentWidth(Alignment.End)
                             .padding(end = endPad)
                     )
                 }
@@ -275,6 +276,9 @@ fun MessageItem(
     // File special rendering
     if (message.type == BitchatMessageType.File) {
         val path = message.content.trim()
+        val isSelf = message.senderPeerID == meshService.myPeerID ||
+                message.sender == currentUserNickname ||
+                message.sender.startsWith("$currentUserNickname#")
         // Derive sending progress if applicable
         val (overrideProgress, _) = when (val st = message.deliveryStatus) {
             is com.bitchat.android.model.DeliveryStatus.PartiallyDelivered -> {
@@ -295,23 +299,28 @@ fun MessageItem(
             )
             val haptic = LocalHapticFeedback.current
             var headerLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-            Text(
-                text = headerText,
-                fontFamily = FontFamily.Monospace,
-                color = colorScheme.onSurface,
-                modifier = Modifier.pointerInput(message.id) {
-                    detectTapGestures(onTap = { pos ->
-                        val layout = headerLayout ?: return@detectTapGestures
-                        val offset = layout.getOffsetForPosition(pos)
-                        val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
-                        if (ann.isNotEmpty() && onNicknameClick != null) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onNicknameClick.invoke(ann.first().item)
-                        }
-                    }, onLongPress = { onMessageLongPress?.invoke(message) })
-                },
-                onTextLayout = { headerLayout = it }
-            )
+            if (!isSelf) {
+                Text(
+                    text = headerText,
+                    fontFamily = FontFamily.Monospace,
+                    color = colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.Start)
+                        .pointerInput(message.id) {
+                            detectTapGestures(onTap = { pos ->
+                                val layout = headerLayout ?: return@detectTapGestures
+                                val offset = layout.getOffsetForPosition(pos)
+                                val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
+                                if (ann.isNotEmpty() && onNicknameClick != null) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNicknameClick.invoke(ann.first().item)
+                                }
+                            }, onLongPress = { onMessageLongPress?.invoke(message) })
+                        },
+                    onTextLayout = { headerLayout = it }
+                )
+            }
 
             // Try to load the file packet from the path
             val packet = try {
@@ -330,7 +339,10 @@ fun MessageItem(
                 null
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
+            ) {
                 Box {
                     if (packet != null) {
                         if (overrideProgress != null) {
@@ -403,9 +415,11 @@ fun MessageItem(
         )
         
         // Check if this message was sent by self to avoid click interactions on own nickname
+        val normalizedMe2 = currentUserNickname.removePrefix("@")
+        val senderBase2 = splitSuffix(message.sender.removePrefix("@")).first
         val isSelf = message.senderPeerID == meshService.myPeerID || 
-                     message.sender == currentUserNickname ||
-                     message.sender.startsWith("$currentUserNickname#")
+                     senderBase2 == normalizedMe2 ||
+                     message.sender.removePrefix("@").startsWith("$normalizedMe2#")
         
         val haptic = LocalHapticFeedback.current
         val context = LocalContext.current

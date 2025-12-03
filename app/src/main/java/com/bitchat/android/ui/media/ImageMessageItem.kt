@@ -49,6 +49,11 @@ fun ImageMessageItem(
     modifier: Modifier = Modifier
 ) {
     val path = message.content.trim()
+    val normalizedMe = currentUserNickname.removePrefix("@")
+    val senderBase = com.bitchat.android.ui.splitSuffix(message.sender.removePrefix("@")).first
+    val isSelf = message.senderPeerID == meshService.myPeerID ||
+            senderBase == normalizedMe ||
+            message.sender.removePrefix("@").startsWith("$normalizedMe#")
     Column(modifier = modifier.fillMaxWidth()) {
         val headerText = com.bitchat.android.ui.formatMessageHeaderAnnotatedString(
             message = message,
@@ -59,23 +64,28 @@ fun ImageMessageItem(
         )
         val haptic = LocalHapticFeedback.current
         var headerLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-        Text(
-            text = headerText,
-            fontFamily = FontFamily.Monospace,
-            color = colorScheme.onSurface,
-            modifier = Modifier.pointerInput(message.id) {
-                detectTapGestures(onTap = { pos ->
-                    val layout = headerLayout ?: return@detectTapGestures
-                    val offset = layout.getOffsetForPosition(pos)
-                    val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
-                    if (ann.isNotEmpty() && onNicknameClick != null) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNicknameClick.invoke(ann.first().item)
-                    }
-                }, onLongPress = { onMessageLongPress?.invoke(message) })
-            },
-            onTextLayout = { headerLayout = it }
-        )
+        if (!isSelf) {
+            Text(
+                text = headerText,
+                fontFamily = FontFamily.Monospace,
+                color = colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentWidth(Alignment.Start)
+                    .pointerInput(message.id) {
+                        detectTapGestures(onTap = { pos ->
+                            val layout = headerLayout ?: return@detectTapGestures
+                            val offset = layout.getOffsetForPosition(pos)
+                            val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
+                            if (ann.isNotEmpty() && onNicknameClick != null) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onNicknameClick.invoke(ann.first().item)
+                            }
+                        }, onLongPress = { onMessageLongPress?.invoke(message) })
+                    },
+                onTextLayout = { headerLayout = it }
+            )
+        }
 
         val context = LocalContext.current
         val bmp = remember(path) { try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null } }
@@ -93,7 +103,10 @@ fun ImageMessageItem(
                 is com.bitchat.android.model.DeliveryStatus.PartiallyDelivered -> if (st.total > 0) st.reached.toFloat() / st.total.toFloat() else 0f
                 else -> null
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
+            ) {
                 Box {
                     if (progressFraction != null && progressFraction < 1f && message.sender == currentUserNickname) {
                         // Cyberpunk block-reveal while sending

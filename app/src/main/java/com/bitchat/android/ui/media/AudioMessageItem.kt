@@ -39,6 +39,11 @@ fun AudioMessageItem(
     modifier: Modifier = Modifier
 ) {
     val path = message.content.trim()
+    val normalizedMe = currentUserNickname.removePrefix("@")
+    val senderBase = com.bitchat.android.ui.splitSuffix(message.sender.removePrefix("@")).first
+    val isSelf = message.senderPeerID == meshService.myPeerID ||
+            senderBase == normalizedMe ||
+            message.sender.removePrefix("@").startsWith("$normalizedMe#")
     // Derive sending progress if applicable
     val (overrideProgress, overrideColor) = when (val st = message.deliveryStatus) {
         is com.bitchat.android.model.DeliveryStatus.PartiallyDelivered -> {
@@ -59,25 +64,34 @@ fun AudioMessageItem(
         )
         val haptic = LocalHapticFeedback.current
         var headerLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-        Text(
-            text = headerText,
-            fontFamily = FontFamily.Monospace,
-            color = colorScheme.onSurface,
-            modifier = Modifier.pointerInput(message.id) {
-                detectTapGestures(onTap = { pos ->
-                    val layout = headerLayout ?: return@detectTapGestures
-                    val offset = layout.getOffsetForPosition(pos)
-                    val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
-                    if (ann.isNotEmpty() && onNicknameClick != null) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNicknameClick.invoke(ann.first().item)
-                    }
-                }, onLongPress = { onMessageLongPress?.invoke(message) })
-            },
-            onTextLayout = { headerLayout = it }
-        )
+        if (!isSelf) {
+            Text(
+                text = headerText,
+                fontFamily = FontFamily.Monospace,
+                color = colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentWidth(Alignment.Start)
+                    .pointerInput(message.id) {
+                        detectTapGestures(onTap = { pos ->
+                            val layout = headerLayout ?: return@detectTapGestures
+                            val offset = layout.getOffsetForPosition(pos)
+                            val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
+                            if (ann.isNotEmpty() && onNicknameClick != null) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onNicknameClick.invoke(ann.first().item)
+                            }
+                        }, onLongPress = { onMessageLongPress?.invoke(message) })
+                    },
+                onTextLayout = { headerLayout = it }
+            )
+        }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             VoiceNotePlayer(
                 path = path,
                 progressOverride = overrideProgress,

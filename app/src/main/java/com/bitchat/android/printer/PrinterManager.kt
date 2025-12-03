@@ -361,6 +361,9 @@ object PrinterManager {
                 )
             }
         }
+        if (successCount > 0) {
+            try { db.updateOrderStatus(orderId, "printed") } catch (_: Exception) { }
+        }
         successCount
     }
 
