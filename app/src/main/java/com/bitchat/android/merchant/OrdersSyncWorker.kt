@@ -48,7 +48,8 @@ class OrdersSyncWorker(appContext: Context, params: WorkerParameters) : Coroutin
         val variant: String?,
         @SerializedName("category_id") val categoryId: String?,
         val note: String?,
-        val prepared: Boolean?
+        val prepared: Boolean?,
+        val printed: Boolean?
     )
 
     override suspend fun doWork(): Result {
@@ -81,7 +82,8 @@ class OrdersSyncWorker(appContext: Context, params: WorkerParameters) : Coroutin
                 createdAt = o.createdAt,
                 deliveryMethod = o.deliveryMethod,
                 userId = o.userId,
-                status = o.status
+                status = o.status,
+                payload = try { gson.toJson(o) } catch (_: Exception) { null }
             )
             // Replace items
             val items = o.products?.map { p ->
@@ -92,7 +94,8 @@ class OrdersSyncWorker(appContext: Context, params: WorkerParameters) : Coroutin
                     variant = p.variant,
                     categoryId = p.categoryId,
                     note = p.note,
-                    prepared = (p.prepared ?: false)
+                    prepared = (p.prepared ?: false),
+                    printed = (p.printed ?: false)
                 )
             }.orEmpty()
             db.replaceOrderItems(o.orderId, items)

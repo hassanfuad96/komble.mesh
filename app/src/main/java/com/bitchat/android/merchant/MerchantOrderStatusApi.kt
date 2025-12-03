@@ -69,4 +69,41 @@ object MerchantOrderStatusApi {
             }
         }
     }
+
+    suspend fun markPrintedByCategory(
+        orderId: String,
+        categoryIds: List<Int>,
+        authorizationHeader: String?,
+        merchantId: Int?
+    ): Boolean {
+        if (orderId.isBlank() || categoryIds.isEmpty()) return false
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = "https://go.realm.chat/api/v1/orders/${orderId}/printed/by-category"
+                val json = com.google.gson.Gson().toJson(
+                    mapOf("category_ids" to categoryIds.map { it.toString() })
+                )
+                val mediaType = "application/json".toMediaType()
+                val body = json.toRequestBody(mediaType)
+
+                val client = OkHttpProvider.httpClient()
+                val builder = Request.Builder()
+                    .url(url)
+                    .put(body)
+                    .addHeader("Content-Type", "application/json")
+                if (merchantId != null) builder.addHeader("X-Merchant-ID", merchantId.toString())
+                if (!authorizationHeader.isNullOrBlank()) builder.addHeader("Authorization", authorizationHeader)
+                val request = builder.build()
+                val response = client.newCall(request).execute()
+                val ok = response.isSuccessful
+                if (!ok) {
+                    Log.w(TAG, "markPrintedByCategory failed: code=${response.code} message=${response.message}")
+                }
+                ok
+            } catch (t: Throwable) {
+                Log.e(TAG, "markPrintedByCategory request error", t)
+                false
+            }
+        }
+    }
 }

@@ -51,11 +51,12 @@ object LocalPrintQueue {
                                     variant = null,
                                     categoryId = it.categoryId,
                                     note = null,
-                                    prepared = null
+                                    prepared = null,
+                                    printed = null
                                 )
                             }
                         )
-                    db.upsertOrder(dto.orderId, dto.id, dto.createdAt, dto.deliveryMethod, dto.userId, dto.status)
+                    db.upsertOrder(dto.orderId, dto.id, dto.createdAt, dto.deliveryMethod, dto.userId, dto.status, payload = try { com.google.gson.Gson().toJson(dto) } catch (_: Exception) { null })
                     val items = dto.products?.map { p ->
                         AppDatabaseHelper.OrderItem(
                             itemId = p.id,
@@ -64,7 +65,8 @@ object LocalPrintQueue {
                             variant = p.variant,
                             categoryId = p.categoryId,
                             note = p.note,
-                            prepared = false
+                            prepared = false,
+                            printed = false
                         )
                     }.orEmpty()
                     db.replaceOrderItems(dto.orderId, items)

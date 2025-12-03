@@ -5,6 +5,7 @@ import android.util.Log
 import com.bitchat.android.db.AppDatabaseHelper
 import com.bitchat.android.printer.PrinterManager
 import com.bitchat.android.printer.PrinterSettingsManager
+import com.bitchat.android.printer.SavedPrinter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -361,7 +362,9 @@ object MerchantOrdersPoller {
                                                 )
                                             )
                                         } catch (_: Exception) { }
-                                        
+                                        if (!ok && (printer.role == "station")) {
+                                            scheduleStationRetry(appCtx, printer, o.orderId)
+                                        }
                                     } else {
                                         try {
                                             db.insertPrintLog(
@@ -377,7 +380,6 @@ object MerchantOrdersPoller {
                                         } catch (_: Exception) { }
                                     }
                                 } catch (e: Exception) {
-                                    
                                     try {
                                         db.insertPrintLog(
                                             com.bitchat.android.db.PrintLog(
@@ -397,6 +399,52 @@ object MerchantOrdersPoller {
                 } catch (e: Exception) {
                     Log.e(TAG, "Polling loop error", e)
                 }
+                delay(5000)
+            }
+        }
+    }
+
+    private fun scheduleStationRetry(appCtx: Context, printer: SavedPrinter, orderId: String) {
+        scope.launch {
+            val db = AppDatabaseHelper(appCtx)
+            while (isActive) {
+                try {
+                    val header = AppDatabaseHelper.fetchOrderHeader(appCtx, orderId)
+                    val dto = OrdersSyncWorker.OrderDto(
+                        id = header?.id,
+                        orderId = orderId,
+                        globalNote = header?.globalNote,
+                        customerName = header?.customerName,
+                        customerPhone = header?.customerPhone,
+                        tableNumber = header?.tableNumber,
+                        createdAt = header?.createdAt,
+                        deliveryMethod = header?.deliveryMethod,
+                        deviceId = header?.deviceId,
+                        userId = header?.userId,
+                        status = header?.status,
+                        updatedAtStatus = header?.updatedAtStatus,
+                        products = null
+                    )
+                    val content = PrinterManager.formatOrderForPrinter(appCtx, dto, printer)
+                    if (content.isBlank()) {
+                        delay(5000)
+                        continue
+                    }
+                    val ok = PrinterManager.printOrder(appCtx, printer, content, dto)
+                    try {
+                        db.insertPrintLog(
+                            com.bitchat.android.db.PrintLog(
+                                printerId = printer.id,
+                                host = printer.host,
+                                port = printer.port,
+                                label = "retry",
+                                type = "poll_retry",
+                                success = ok
+                            )
+                        )
+                    } catch (_: Exception) { }
+                    if (ok) break
+                } catch (_: Exception) { }
                 delay(5000)
             }
         }
@@ -429,7 +477,8 @@ object MerchantOrdersPoller {
                             variant = pObj.get("variant")?.asStringOrNull(),
                             categoryId = pObj.get("category_id")?.asStringOrNull(),
                             note = pObj.get("note")?.asStringOrNull(),
-                            prepared = pObj.get("prepared")?.asBoolOrNull()
+                            prepared = pObj.get("prepared")?.asBoolOrNull(),
+                            printed = pObj.get("printed")?.asBoolOrNull()
                         )
                     }
                 }
@@ -523,6 +572,7 @@ object MerchantOrdersPoller {
     }
 
     private fun upsertOrder(db: AppDatabaseHelper, o: OrdersSyncWorker.OrderDto) {
+        val payload = try { com.google.gson.Gson().toJson(o) } catch (_: Exception) { null }
         db.upsertOrder(
             orderId = o.orderId,
             id = o.id,
@@ -535,7 +585,8 @@ object MerchantOrdersPoller {
             tableNumber = o.tableNumber,
             globalNote = o.globalNote,
             deviceId = o.deviceId,
-            updatedAtStatus = o.updatedAtStatus
+            updatedAtStatus = o.updatedAtStatus,
+            payload = payload
         )
         val items = o.products?.map { p ->
             AppDatabaseHelper.OrderItem(
@@ -545,7 +596,8 @@ object MerchantOrdersPoller {
                 variant = p.variant,
                 categoryId = p.categoryId,
                 note = p.note,
-                prepared = (p.prepared ?: false)
+                prepared = (p.prepared ?: false),
+                printed = (p.printed ?: false)
             )
         }.orEmpty()
         db.replaceOrderItems(o.orderId, items)

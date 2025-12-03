@@ -52,7 +52,8 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                 table_number TEXT,
                 global_note TEXT,
                 device_id TEXT,
-                updated_at_status TEXT
+                updated_at_status TEXT,
+                payload TEXT
             );
             """.trimIndent()
         )
@@ -71,7 +72,8 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                 variant TEXT,
                 category_id TEXT,
                 note TEXT,
-                prepared INTEGER DEFAULT 0
+                prepared INTEGER DEFAULT 0,
+                printed INTEGER DEFAULT 0
             );
             """.trimIndent()
         )
@@ -187,6 +189,12 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             try { db.execSQL("ALTER TABLE orders ADD COLUMN device_id TEXT") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE orders ADD COLUMN updated_at_status TEXT") } catch (_: Exception) {}
         }
+        if (oldVersion < 8) {
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN payload TEXT") } catch (_: Exception) {}
+        }
+        if (oldVersion < 9) {
+            try { db.execSQL("ALTER TABLE order_items ADD COLUMN printed INTEGER DEFAULT 0") } catch (_: Exception) {}
+        }
     }
 
     fun insertPrintLog(log: PrintLog) {
@@ -256,7 +264,8 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         tableNumber: String? = null,
         globalNote: String? = null,
         deviceId: String? = null,
-        updatedAtStatus: String? = null
+        updatedAtStatus: String? = null,
+        payload: String? = null
     ) {
         val values = ContentValues().apply {
             put("order_id", orderId)
@@ -271,6 +280,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             put("global_note", globalNote)
             put("device_id", deviceId)
             put("updated_at_status", updatedAtStatus)
+            if (payload != null) put("payload", payload)
         }
         writableDatabase.insertWithOnConflict(
             "orders",
@@ -306,6 +316,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                     put("category_id", item.categoryId)
                     put("note", item.note)
                     put("prepared", if (item.prepared) 1 else 0)
+                    put("printed", if (item.printed) 1 else 0)
                 }
                 db.insert("order_items", null, v)
             }
@@ -362,12 +373,13 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         val variant: String?,
         val categoryId: String?,
         val note: String?,
-        val prepared: Boolean = false
+        val prepared: Boolean = false,
+        val printed: Boolean = false
     )
 
     companion object {
         private const val DB_NAME = "komble.db"
-        private const val DB_VERSION = 7
+        private const val DB_VERSION = 9
         @Volatile private var instance: AppDatabaseHelper? = null
         @JvmStatic
         fun getInstance(context: Context): AppDatabaseHelper = instance ?: synchronized(this) {
@@ -503,7 +515,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         val result = mutableListOf<OrderItem>()
         val c = readableDatabase.query(
             "order_items",
-            arrayOf("item_id", "name", "quantity", "variant", "category_id", "note", "prepared"),
+            arrayOf("item_id", "name", "quantity", "variant", "category_id", "note", "prepared", "printed"),
             "order_id=?",
             arrayOf(orderId),
             null,
@@ -518,6 +530,7 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             val idxCat = it.getColumnIndex("category_id")
             val idxNote = it.getColumnIndex("note")
             val idxPrepared = it.getColumnIndex("prepared")
+            val idxPrinted = it.getColumnIndex("printed")
             while (it.moveToNext()) {
                 result.add(
                     OrderItem(
@@ -527,7 +540,8 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                         variant = if (idxVariant >= 0) it.getString(idxVariant) else null,
                         categoryId = if (idxCat >= 0) it.getString(idxCat) else null,
                         note = if (idxNote >= 0) it.getString(idxNote) else null,
-                        prepared = (if (idxPrepared >= 0) it.getInt(idxPrepared) else 0) == 1
+                        prepared = (if (idxPrepared >= 0) it.getInt(idxPrepared) else 0) == 1,
+                        printed = (if (idxPrinted >= 0) it.getInt(idxPrinted) else 0) == 1
                     )
                 )
             }
@@ -672,6 +686,25 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         if (conditions.isEmpty()) return
         val where = "$baseCond AND (" + conditions.joinToString(" OR ") + ")"
         val v = ContentValues().apply { put("prepared", 1) }
+        writableDatabase.update("order_items", v, where, args.toTypedArray())
+    }
+
+    fun updatePrintedForCategories(orderId: String, categoryIds: Set<Int>, includeUncategorized: Boolean) {
+        val conditions = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        val baseCond = "order_id=?"
+        args.add(orderId)
+        if (categoryIds.isNotEmpty()) {
+            val placeholders = categoryIds.joinToString(",") { "?" }
+            conditions.add("category_id IN ($placeholders)")
+            args.addAll(categoryIds.map { it.toString() })
+        }
+        if (includeUncategorized) {
+            conditions.add("category_id IS NULL")
+        }
+        if (conditions.isEmpty()) return
+        val where = "$baseCond AND (" + conditions.joinToString(" OR ") + ")"
+        val v = ContentValues().apply { put("printed", 1) }
         writableDatabase.update("order_items", v, where, args.toTypedArray())
     }
 

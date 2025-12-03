@@ -272,6 +272,9 @@ object MerchantWebSocketManager {
                                             note = pObj.get("note")?.let { try { it.asString } catch (_: Throwable) { null } },
                                             prepared = pObj.get("prepared")?.let { 
                                                 try { it.asBoolean } catch (_: Throwable) { try { it.asInt != 0 } catch (_: Throwable) { null } }
+                                            },
+                                            printed = pObj.get("printed")?.let {
+                                                try { it.asBoolean } catch (_: Throwable) { try { it.asInt != 0 } catch (_: Throwable) { null } }
                                             }
                                         )
                                     }
@@ -290,7 +293,8 @@ object MerchantWebSocketManager {
                             tableNumber = dto.tableNumber,
                             globalNote = dto.globalNote,
                             deviceId = dto.deviceId,
-                            updatedAtStatus = dto.updatedAtStatus
+                            updatedAtStatus = dto.updatedAtStatus,
+                            payload = try { dataObj?.toString() } catch (_: Exception) { null }
                         )
                         val items = dto.products?.map { p ->
                             com.bitchat.android.db.AppDatabaseHelper.OrderItem(
@@ -300,7 +304,8 @@ object MerchantWebSocketManager {
                                 variant = p.variant,
                                 categoryId = p.categoryId,
                                 note = p.note,
-                                prepared = (p.prepared ?: false)
+                                prepared = (p.prepared ?: false),
+                                printed = (p.printed ?: false)
                             )
                         }.orEmpty()
                         db.replaceOrderItems(dto.orderId, items)

@@ -246,21 +246,31 @@ object PrinterManager {
      * Note: HTTP endpoints for updates may vary; this uses DB flags and placeholders for remote sync.
      */
     private fun updateStatusesAfterPrint(context: Context, order: OrdersSyncWorker.OrderDto, printer: SavedPrinter) {
-        // Always mark locally as printed on any successful print
         val db = AppDatabaseHelper(context)
-        try { db.updateOrderStatus(order.orderId, "printed") } catch (_: Exception) { }
+        val items = db.getOrderItems(order.orderId)
+        val selected = printer.selectedCategoryIds ?: emptyList()
+        val includeAll = selected.contains(0)
+        val includeUncategorized = printer.uncategorizedSelected == true
+        val categoryIds: Set<Int> = if (includeAll) {
+            items.mapNotNull { it.categoryId?.toIntOrNull() }.toSet()
+        } else if (selected.isEmpty() && !includeUncategorized) {
+            val global = try { CategoriesSelectionStore(context).getSelectedCategories() } catch (_: Exception) { emptyList<Int?>() }
+            global.mapNotNull { it }.toSet()
+        } else {
+            selected.toSet()
+        }.filter { it != 0 }.toSet()
 
-        // Fire remote status update to printed
+        try { db.updatePrintedForCategories(order.orderId, categoryIds, includeUncategorized) } catch (_: Exception) { }
+
         try {
             val authMgr = MerchantAuthManager.getInstance(context)
             val auth = authMgr.getAuthorizationHeader()
             val userId = authMgr.getCurrentUser()?.id
-            // Launching suspend from non-suspend; delegate via withContext in API helper
             kotlinx.coroutines.runBlocking {
-                MerchantOrderStatusApi.markPrinted(order.orderId, auth, userId)
+                MerchantOrderStatusApi.markPrintedByCategory(order.orderId, categoryIds.toList(), auth, userId)
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "Remote printed status update failed for ${order.orderId}", t)
+            Log.w(TAG, "Remote printed-by-category update failed for ${order.orderId}", t)
         }
     }
 

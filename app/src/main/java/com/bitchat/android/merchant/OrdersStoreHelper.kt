@@ -45,7 +45,8 @@ object OrdersStoreHelper {
         val variant: String?,
         @SerializedName("category_id") val categoryId: String?,
         val note: String?,
-        val prepared: Boolean?
+        val prepared: Boolean?,
+        val printed: Boolean?
     )
 
     /**
@@ -83,7 +84,8 @@ object OrdersStoreHelper {
                     tableNumber = o.tableNumber,
                     globalNote = o.globalNote,
                     deviceId = o.deviceId,
-                    updatedAtStatus = o.updatedAtStatus
+                    updatedAtStatus = o.updatedAtStatus,
+                    payload = try { gson.toJson(o) } catch (_: Exception) { null }
                 )
 
                 // Replace items
@@ -95,7 +97,8 @@ object OrdersStoreHelper {
                         variant = p.variant,
                         categoryId = p.categoryId,
                         note = p.note,
-                        prepared = (p.prepared ?: false)
+                        prepared = (p.prepared ?: false),
+                        printed = (p.printed ?: false)
                     )
                 }.orEmpty()
                 db.replaceOrderItems(o.orderId, items)
