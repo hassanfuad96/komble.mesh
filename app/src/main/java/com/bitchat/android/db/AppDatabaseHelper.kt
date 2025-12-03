@@ -46,7 +46,13 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
                 created_at TEXT,
                 delivery_method TEXT,
                 user_id TEXT,
-                status TEXT
+                status TEXT,
+                customer_name TEXT,
+                customer_phone TEXT,
+                table_number TEXT,
+                global_note TEXT,
+                device_id TEXT,
+                updated_at_status TEXT
             );
             """.trimIndent()
         )
@@ -173,6 +179,14 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 6) {
             try { db.execSQL("ALTER TABLE order_items ADD COLUMN note TEXT") } catch (_: Exception) {}
         }
+        if (oldVersion < 7) {
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN customer_name TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN customer_phone TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN table_number TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN global_note TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN device_id TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE orders ADD COLUMN updated_at_status TEXT") } catch (_: Exception) {}
+        }
     }
 
     fun insertPrintLog(log: PrintLog) {
@@ -236,7 +250,13 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
         createdAt: String?,
         deliveryMethod: String?,
         userId: String?,
-        status: String?
+        status: String?,
+        customerName: String? = null,
+        customerPhone: String? = null,
+        tableNumber: String? = null,
+        globalNote: String? = null,
+        deviceId: String? = null,
+        updatedAtStatus: String? = null
     ) {
         val values = ContentValues().apply {
             put("order_id", orderId)
@@ -245,6 +265,12 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             put("delivery_method", deliveryMethod)
             put("user_id", userId)
             put("status", status)
+            put("customer_name", customerName)
+            put("customer_phone", customerPhone)
+            put("table_number", tableNumber)
+            put("global_note", globalNote)
+            put("device_id", deviceId)
+            put("updated_at_status", updatedAtStatus)
         }
         writableDatabase.insertWithOnConflict(
             "orders",
@@ -341,11 +367,43 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DB_NAME = "komble.db"
-        private const val DB_VERSION = 6
+        private const val DB_VERSION = 7
         @Volatile private var instance: AppDatabaseHelper? = null
         @JvmStatic
         fun getInstance(context: Context): AppDatabaseHelper = instance ?: synchronized(this) {
             instance ?: AppDatabaseHelper(context).also { instance = it }
+        }
+        @JvmStatic
+        fun fetchOrderHeader(context: Context, orderId: String): OrderHeader? {
+            val db = getInstance(context)
+            val c = db.readableDatabase.query(
+                "orders",
+                arrayOf(
+                    "order_id","id","created_at","delivery_method","user_id","status",
+                    "customer_name","customer_phone","table_number","global_note","device_id","updated_at_status"
+                ),
+                "order_id=?",
+                arrayOf(orderId),
+                null, null, null, "1"
+            )
+            c.use {
+                return if (it.moveToFirst()) {
+                    OrderHeader(
+                        orderId = it.getString(it.getColumnIndex("order_id")),
+                        id = it.getString(it.getColumnIndex("id")),
+                        createdAt = it.getString(it.getColumnIndex("created_at")),
+                        deliveryMethod = it.getString(it.getColumnIndex("delivery_method")),
+                        userId = it.getString(it.getColumnIndex("user_id")),
+                        status = it.getString(it.getColumnIndex("status")),
+                        customerName = it.getString(it.getColumnIndex("customer_name")),
+                        customerPhone = it.getString(it.getColumnIndex("customer_phone")),
+                        tableNumber = it.getString(it.getColumnIndex("table_number")),
+                        globalNote = it.getString(it.getColumnIndex("global_note")),
+                        deviceId = it.getString(it.getColumnIndex("device_id")),
+                        updatedAtStatus = it.getString(it.getColumnIndex("updated_at_status"))
+                    )
+                } else null
+            }
         }
     }
 
@@ -626,4 +684,37 @@ class AppDatabaseHelper constructor(context: Context) : SQLiteOpenHelper(
             return if (it.moveToFirst()) it.getInt(0) == 0 else false
         }
     }
+
+    data class OrderHeader(
+        val orderId: String,
+        val id: String?,
+        val createdAt: String?,
+        val deliveryMethod: String?,
+        val userId: String?,
+        val status: String?,
+        val customerName: String?,
+        val customerPhone: String?,
+        val tableNumber: String?,
+        val globalNote: String?,
+        val deviceId: String?,
+        val updatedAtStatus: String?
+    )
+
+    // Instance variant intentionally omitted; prefer static helper below
 }
+    data class OrderHeader(
+        val orderId: String,
+        val id: String?,
+        val createdAt: String?,
+        val deliveryMethod: String?,
+        val userId: String?,
+        val status: String?,
+        val customerName: String?,
+        val customerPhone: String?,
+        val tableNumber: String?,
+        val globalNote: String?,
+        val deviceId: String?,
+        val updatedAtStatus: String?
+    )
+
+    

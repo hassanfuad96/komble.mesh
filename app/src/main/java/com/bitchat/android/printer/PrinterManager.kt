@@ -292,19 +292,20 @@ object PrinterManager {
             return@withContext 0
         }
 
+        val header = com.bitchat.android.db.AppDatabaseHelper.fetchOrderHeader(context, orderId)
         val orderDto = OrdersSyncWorker.OrderDto(
-            id = null,
+            id = header?.id,
             orderId = orderId,
-            globalNote = null,
-            customerName = null,
-            customerPhone = null,
-            tableNumber = null,
-            createdAt = null,
-            deliveryMethod = null,
-            deviceId = null,
-            userId = null,
-            status = null,
-            updatedAtStatus = null,
+            globalNote = header?.globalNote,
+            customerName = header?.customerName,
+            customerPhone = header?.customerPhone,
+            tableNumber = header?.tableNumber,
+            createdAt = header?.createdAt,
+            deliveryMethod = header?.deliveryMethod,
+            deviceId = header?.deviceId,
+            userId = header?.userId,
+            status = header?.status,
+            updatedAtStatus = header?.updatedAtStatus,
             products = null
         )
 

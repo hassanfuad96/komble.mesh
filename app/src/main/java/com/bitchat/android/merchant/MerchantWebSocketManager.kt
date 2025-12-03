@@ -284,7 +284,13 @@ object MerchantWebSocketManager {
                             createdAt = dto.createdAt,
                             deliveryMethod = dto.deliveryMethod,
                             userId = dto.userId,
-                            status = dto.status
+                            status = dto.status,
+                            customerName = dto.customerName,
+                            customerPhone = dto.customerPhone,
+                            tableNumber = dto.tableNumber,
+                            globalNote = dto.globalNote,
+                            deviceId = dto.deviceId,
+                            updatedAtStatus = dto.updatedAtStatus
                         )
                         val items = dto.products?.map { p ->
                             com.bitchat.android.db.AppDatabaseHelper.OrderItem(

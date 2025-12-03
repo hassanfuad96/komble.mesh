@@ -529,7 +529,13 @@ object MerchantOrdersPoller {
             createdAt = o.createdAt,
             deliveryMethod = o.deliveryMethod,
             userId = o.userId,
-            status = o.status
+            status = o.status,
+            customerName = o.customerName,
+            customerPhone = o.customerPhone,
+            tableNumber = o.tableNumber,
+            globalNote = o.globalNote,
+            deviceId = o.deviceId,
+            updatedAtStatus = o.updatedAtStatus
         )
         val items = o.products?.map { p ->
             AppDatabaseHelper.OrderItem(
