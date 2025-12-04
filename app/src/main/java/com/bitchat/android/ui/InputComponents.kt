@@ -167,6 +167,7 @@ fun MessageInput(
     onSendVoiceNote: (String?, String?, String) -> Unit,
     onSendImageNote: (String?, String?, String) -> Unit,
     onSendFileNote: (String?, String?, String) -> Unit,
+    onShowAttachMenu: () -> Unit,
     selectedPrivatePeer: String?,
     currentChannel: String?,
     nickname: String,
@@ -183,15 +184,19 @@ fun MessageInput(
     var amplitude by remember { mutableStateOf(0) }
 
     Row(
-        modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp), // Reduced padding
+        modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Text input with placeholder OR visualizer when recording
+        if (!isRecording) {
+            IconButton(onClick = { onShowAttachMenu() }, enabled = value.text.isEmpty() && showMediaButtons) {
+                Icon(imageVector = Icons.Filled.MoreHoriz, contentDescription = stringResource(R.string.cd_pick_media), tint = Color(0xFF616161))
+            }
+        }
         Box(
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
         ) {
-            // Always keep the text field mounted to retain focus and avoid IME collapse
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -215,19 +220,16 @@ fun MessageInput(
                     }
             )
 
-            // Show placeholder when there's no text and not recording
             if (value.text.isEmpty() && !isRecording) {
                 Text(
                     text = stringResource(R.string.type_a_message_placeholder),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = colorScheme.onSurface.copy(alpha = 0.5f), // Muted grey
+                    color = colorScheme.onSurface.copy(alpha = 0.5f),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-
-            // Overlay the real-time scrolling waveform while recording
             if (isRecording) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     RealtimeScrollingWaveform(
@@ -253,7 +255,7 @@ fun MessageInput(
         
         Spacer(modifier = Modifier.width(8.dp)) // Reduced spacing
         
-        // Voice and image buttons when no text (only visible in Mesh chat)
+        // Voice and image buttons when no text
         if (value.text.isEmpty() && showMediaButtons) {
             // Hold-to-record microphone
             val bg = if (colorScheme.background == Color.Black) Color(0xFF00FF00).copy(alpha = 0.75f) else Color(0xFF008000).copy(alpha = 0.75f)

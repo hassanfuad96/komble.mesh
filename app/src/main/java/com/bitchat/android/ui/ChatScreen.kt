@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -27,6 +28,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.ui.media.FullScreenImageViewer
+import com.bitchat.android.ui.media.ImagePickerButton
+import com.bitchat.android.ui.media.FilePickerButton
 
 /**
  * Main ChatScreen - REFACTORED to use component-based architecture
@@ -65,6 +68,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     var showLocationChannelsSheet by remember { mutableStateOf(false) }
     var showLocationNotesSheet by remember { mutableStateOf(false) }
     var showUserSheet by remember { mutableStateOf(false) }
+    var showAttachMenuSheet by remember { mutableStateOf(false) }
     var selectedUserForSheet by remember { mutableStateOf("") }
     var selectedMessageForSheet by remember { mutableStateOf<BitchatMessage?>(null) }
     var showFullScreenImageViewer by remember { mutableStateOf(false) }
@@ -110,7 +114,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorScheme.background) // Extend background to fill entire screen including status bar
+            .background(
+                brush = Brush.linearGradient(
+                    colors = if (colorScheme.background == Color.Black) {
+                        listOf(Color(0xFF0A0F0A), Color(0xFF0E1210))
+                    } else {
+                        listOf(Color(0xFFE5DDD5), Color(0xFFECE5DD))
+                    }
+                )
+            )
     ) {
         val headerHeight = 42.dp
         
@@ -212,6 +224,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         onSendFileNote = { peer, onionOrChannel, path ->
             viewModel.sendFileNote(peer, onionOrChannel, path)
         },
+        onShowAttachMenu = { showAttachMenuSheet = true },
         
         showCommandSuggestions = showCommandSuggestions,
         commandSuggestions = commandSuggestions,
@@ -375,6 +388,21 @@ fun ChatScreen(viewModel: ChatViewModel) {
         selectedMessageForSheet = selectedMessageForSheet,
         viewModel = viewModel
     )
+
+    // Attachment Menu Bottom Sheet
+    if (showAttachMenuSheet) {
+        AttachMenuSheet(
+            onDismiss = { showAttachMenuSheet = false },
+            onPickImage = { outPath ->
+                viewModel.sendImageNote(selectedPrivatePeer, currentChannel, outPath)
+                showAttachMenuSheet = false
+            },
+            onPickFile = { outPath ->
+                viewModel.sendFileNote(selectedPrivatePeer, currentChannel, outPath)
+                showAttachMenuSheet = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -385,6 +413,7 @@ private fun ChatInputSection(
     onSendVoiceNote: (String?, String?, String) -> Unit,
     onSendImageNote: (String?, String?, String) -> Unit,
     onSendFileNote: (String?, String?, String) -> Unit,
+    onShowAttachMenu: () -> Unit,
     showCommandSuggestions: Boolean,
     commandSuggestions: List<CommandSuggestion>,
     showMentionSuggestions: Boolean,
@@ -428,6 +457,7 @@ private fun ChatInputSection(
                 onSendVoiceNote = onSendVoiceNote,
                 onSendImageNote = onSendImageNote,
                 onSendFileNote = onSendFileNote,
+                onShowAttachMenu = onShowAttachMenu,
                 selectedPrivatePeer = selectedPrivatePeer,
                 currentChannel = currentChannel,
                 nickname = nickname,
@@ -567,5 +597,68 @@ private fun ChatDialogs(
             selectedMessage = selectedMessageForSheet,
             viewModel = viewModel
         )
+    }
+}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AttachMenuSheet(
+    onDismiss: () -> Unit,
+    onPickImage: (String) -> Unit,
+    onPickFile: (String) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val colorScheme = MaterialTheme.colorScheme
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(com.bitchat.android.R.string.cd_pick_media),
+                style = MaterialTheme.typography.titleMedium,
+                color = colorScheme.onSurface
+            )
+
+            // Image row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ImagePickerButton(onImageReady = onPickImage)
+                Text(
+                    text = stringResource(com.bitchat.android.R.string.pick_image),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colorScheme.onSurface
+                )
+            }
+
+            // File row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FilePickerButton(onFileReady = onPickFile)
+                Text(
+                    text = stringResource(com.bitchat.android.R.string.pick_file),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colorScheme.onSurface
+                )
+            }
+
+            // Cancel
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(com.bitchat.android.R.string.cancel_lower))
+            }
+        }
     }
 }

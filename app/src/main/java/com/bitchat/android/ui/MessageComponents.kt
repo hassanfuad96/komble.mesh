@@ -10,6 +10,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
  
 
 import androidx.compose.material3.*
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -148,7 +156,7 @@ fun MessageItem(
     onImageClick: ((String, List<String>, Int) -> Unit)? = null
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     // Determine if this message was sent by the current user (normalize '@' and hash suffix)
     val normalizedMe = currentUserNickname.removePrefix("@")
     val senderBase = splitSuffix(message.sender.removePrefix("@")).first
@@ -160,61 +168,63 @@ fun MessageItem(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
-            ) {
-                // Provide a small end padding for own private messages so overlay doesn't cover text
-                val endPad = if (message.isPrivate && isSelf) 16.dp else 0.dp
-
-                if (!isSelf) {
-                    // Left side (others)
-                    MessageTextWithClickableNicknames(
-                        message = message,
-                        messages = messages,
-                        currentUserNickname = currentUserNickname,
-                        meshService = meshService,
-                        colorScheme = colorScheme,
-                        timeFormatter = timeFormatter,
-                        onNicknameClick = onNicknameClick,
-                        onMessageLongPress = onMessageLongPress,
-                        onCancelTransfer = onCancelTransfer,
-                        onImageClick = onImageClick,
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .padding(end = endPad)
-                    )
-                } else {
-                    // Right side (self)
-                    MessageTextWithClickableNicknames(
-                        message = message,
-                        messages = messages,
-                        currentUserNickname = currentUserNickname,
-                        meshService = meshService,
-                        colorScheme = colorScheme,
-                        timeFormatter = timeFormatter,
-                        onNicknameClick = onNicknameClick,
-                        onMessageLongPress = onMessageLongPress,
-                        onCancelTransfer = onCancelTransfer,
-                        onImageClick = onImageClick,
-                        modifier = Modifier
-                            .wrapContentWidth(Alignment.End)
-                            .padding(end = endPad)
-                    )
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
+        ) {
+            val bubbleColor = if (isSelf) {
+                if (MaterialTheme.colorScheme.background == Color.Black) Color(0xFF054D44) else Color(0xFFE7FFC6)
+            } else {
+                if (MaterialTheme.colorScheme.background == Color.Black) Color(0xFF262627) else Color(0xFFFFFFFF)
             }
+            val bubbleShape = RoundedCornerShape(16.dp)
 
-            // Delivery status for private messages (overlay, non-displacing)
-            if (message.isPrivate && isSelf) {
-                message.deliveryStatus?.let { status ->
-                    Box(
+            Surface(
+                color = bubbleColor,
+                shape = bubbleShape,
+                tonalElevation = 1.dp,
+                shadowElevation = 1.dp,
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .padding(horizontal = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    MessageTextWithClickableNicknames(
+                        message = message,
+                        messages = messages,
+                        currentUserNickname = currentUserNickname,
+                        meshService = meshService,
+                        colorScheme = colorScheme,
+                        timeFormatter = timeFormatter,
+                        onNicknameClick = onNicknameClick,
+                        onMessageLongPress = onMessageLongPress,
+                        onCancelTransfer = onCancelTransfer,
+                        onImageClick = onImageClick,
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 2.dp)
+                            .fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DeliveryStatusIcon(status = status)
+                        val ts = try {
+                            timeFormatter.format(message.timestamp)
+                        } catch (_: Exception) { "" }
+                        Text(
+                            text = ts,
+                            fontSize = 11.sp,
+                            color = if (isSelf) Color(0xFF707D7C) else Color(0xFF707D7C),
+                            textAlign = TextAlign.End
+                        )
+                        if (isSelf) {
+                            Spacer(Modifier.width(4.dp))
+                            message.deliveryStatus?.let { status ->
+                                DeliveryStatusIcon(status = status)
+                            }
+                        }
                     }
                 }
             }
@@ -499,7 +509,7 @@ fun MessageItem(
             softWrap = true,
             overflow = TextOverflow.Visible,
             style = androidx.compose.ui.text.TextStyle(
-                color = colorScheme.onSurface
+                color = if (MaterialTheme.colorScheme.background == Color.Black) Color(0xFFDCF8C6) else Color.Black
             ),
             onTextLayout = { result -> textLayoutResult = result }
         )
@@ -508,53 +518,53 @@ fun MessageItem(
 
 @Composable
 fun DeliveryStatusIcon(status: DeliveryStatus) {
-    val colorScheme = MaterialTheme.colorScheme
-    
     when (status) {
         is DeliveryStatus.Sending -> {
-            Text(
-                text = stringResource(R.string.status_sending),
-                fontSize = 10.sp,
-                color = colorScheme.primary.copy(alpha = 0.6f)
+            Icon(
+                imageVector = Icons.Filled.AccessTime,
+                contentDescription = stringResource(R.string.status_sending),
+                tint = Color(0xFF707D7C),
+                modifier = Modifier.size(14.dp)
             )
         }
         is DeliveryStatus.Sent -> {
-            // Use a subtle hollow marker for Sent; single check is reserved for Delivered (iOS parity)
-            Text(
-                text = stringResource(R.string.status_pending),
-                fontSize = 10.sp,
-                color = colorScheme.primary.copy(alpha = 0.6f)
+            Icon(
+                imageVector = Icons.Filled.Done,
+                contentDescription = stringResource(R.string.status_sent),
+                tint = Color(0xFF707D7C),
+                modifier = Modifier.size(14.dp)
             )
         }
         is DeliveryStatus.Delivered -> {
-            // Single check for Delivered (matches iOS expectations)
-            Text(
-                text = stringResource(R.string.status_sent),
-                fontSize = 10.sp,
-                color = colorScheme.primary.copy(alpha = 0.8f)
+            Icon(
+                imageVector = Icons.Filled.DoneAll,
+                contentDescription = stringResource(R.string.status_delivered),
+                tint = Color(0xFF707D7C),
+                modifier = Modifier.size(14.dp)
             )
         }
         is DeliveryStatus.Read -> {
-            Text(
-                text = stringResource(R.string.status_delivered),
-                fontSize = 10.sp,
-                color = Color(0xFF007AFF), // Blue
-                fontWeight = FontWeight.Bold
+            Icon(
+                imageVector = Icons.Filled.DoneAll,
+                contentDescription = stringResource(R.string.status_read),
+                tint = Color(0xFF34B7F1),
+                modifier = Modifier.size(14.dp)
             )
         }
         is DeliveryStatus.Failed -> {
-            Text(
-                text = stringResource(R.string.status_failed),
-                fontSize = 10.sp,
-                color = Color.Red.copy(alpha = 0.8f)
+            Icon(
+                imageVector = Icons.Filled.Error,
+                contentDescription = stringResource(R.string.status_failed),
+                tint = Color.Red,
+                modifier = Modifier.size(14.dp)
             )
         }
         is DeliveryStatus.PartiallyDelivered -> {
-            // Show a single subdued check without numeric label
-            Text(
-                text = stringResource(R.string.status_sent),
-                fontSize = 10.sp,
-                color = colorScheme.primary.copy(alpha = 0.6f)
+            Icon(
+                imageVector = Icons.Filled.Done,
+                contentDescription = stringResource(R.string.status_sent),
+                tint = Color(0xFF707D7C),
+                modifier = Modifier.size(14.dp)
             )
         }
     }

@@ -2,6 +2,7 @@ package com.bitchat.android.ui
 
 
 import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -402,31 +403,53 @@ private fun PrivateChatHeader(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.align(Alignment.Center)
         ) {
-            
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFFF9500) // Orange
-            )
-
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Show a globe when chatting via Nostr alias, or when mesh session not established but mutual favorite exists
-            val showGlobe = isNostrDM || (sessionState != "established" && isMutualFavorite)
-            if (showGlobe) {
-                Icon(
-                    imageVector = Icons.Outlined.Public,
-                contentDescription = stringResource(R.string.cd_nostr_reachable),
-                    modifier = Modifier.size(14.dp),
-                    tint = Color(0xFF9B59B6) // Purple like iOS
-                )
-            } else {
-                NoiseSessionIcon(
-                    sessionState = sessionState,
-                    modifier = Modifier.size(14.dp)
+            val initial = titleText.trim().firstOrNull()?.uppercaseChar() ?: 'U'
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(Color(0xFF25D366), shape = androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = initial.toString(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White
                 )
             }
 
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(horizontalAlignment = Alignment.Start) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color(0xFF111111)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    // Show a globe when chatting via Nostr alias, or when mesh session not established but mutual favorite exists
+                    val showGlobe = isNostrDM || (sessionState != "established" && isMutualFavorite)
+                    if (showGlobe) {
+                        Icon(
+                            imageVector = Icons.Outlined.Public,
+                            contentDescription = stringResource(R.string.cd_nostr_reachable),
+                            modifier = Modifier.size(14.dp),
+                            tint = Color(0xFF9B59B6)
+                        )
+                    } else {
+                        NoiseSessionIcon(
+                            sessionState = sessionState,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+                val online = sessionState == "established"
+                Text(
+                    text = if (online) "online" else "offline",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (online) Color(0xFF25D366) else Color(0xFFAAAAAA)
+                )
+            }
         }
         
         // Favorite button - positioned on the right

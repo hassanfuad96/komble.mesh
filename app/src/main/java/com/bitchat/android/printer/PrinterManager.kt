@@ -104,7 +104,7 @@ object PrinterManager {
             }
             return sb.toString().trimEnd()
         } else {
-            appendLineIfNotBlank(sb, "KomBLE.mesh")
+            appendLineIfNotBlank(sb, "Komers")
             appendLineIfNotBlank(sb, "Order #${order.orderId}")
             appendLineIfNotBlank(sb, formatDisplayDate(order.createdAt))
             appendLineIfNotBlank(sb, "Status: ${order.status}")
