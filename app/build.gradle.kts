@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import java.util.Properties
+
 android {
     namespace = "com.bitchat.android"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -58,6 +60,30 @@ android {
         baseline = file("lint-baseline.xml")
         abortOnError = false
         checkReleaseBuilds = false
+    }
+    val keystoreProps = Properties()
+    val ksFile = rootProject.file("keystore.properties")
+    if (ksFile.exists()) {
+        ksFile.inputStream().use { keystoreProps.load(it) }
+    }
+    val ksPath = (keystoreProps["storeFile"] as String?) ?: System.getenv("ANDROID_KEYSTORE_PATH")
+    val ksPass = (keystoreProps["storePassword"] as String?) ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val keyAliasVal = (keystoreProps["keyAlias"] as String?) ?: System.getenv("ANDROID_KEY_ALIAS")
+    val keyPass = (keystoreProps["keyPassword"] as String?) ?: System.getenv("ANDROID_KEY_PASSWORD")
+    if (listOf(ksPath, ksPass, keyAliasVal, keyPass).all { it != null }) {
+        signingConfigs {
+            create("upload") {
+                storeFile = file(ksPath!!)
+                storePassword = ksPass!!
+                keyAlias = keyAliasVal!!
+                keyPassword = keyPass!!
+            }
+        }
+        buildTypes {
+            release {
+                signingConfig = signingConfigs.getByName("upload")
+            }
+        }
     }
 }
 

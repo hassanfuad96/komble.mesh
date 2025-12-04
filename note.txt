@@ -1,0 +1,39 @@
+Keystore Created and Wired
+
+- Generated an upload keystore and configured Gradle to sign release builds automatically.
+- Added local configuration file and safe ignores so secrets don’t get committed.
+Keystore Details
+
+- Path: /Users/hassanfuad/Code/komblemesh/komble.mesh/keys/upload.jks
+- Alias: upload
+- Passwords:
+  - Store password: Dylalee12
+  - Key password: Dylalee12
+Files Added
+
+- keystore.properties at project root:
+  
+  - storeFile=/Users/hassanfuad/Code/komblemesh/komble.mesh/keys/upload.jks
+  - storePassword=Dylalee12
+  - keyAlias=upload
+  - keyPassword=Dylalee12
+- Updated .gitignore to keep secrets out of VCS:
+  
+  - Ignores keystore.properties and keys/ .
+- Gradle config reads properties and applies signing to release :
+  
+  - app/build.gradle.kts:58–81 loads keystore settings and sets signingConfigs.upload .
+Release Outputs
+
+- Signed bundle: app/build/outputs/bundle/release/app-release.aab
+- Signed APK: app/build/outputs/apk/release/app-release.apk
+Commands Run
+
+- Generated keystore:
+  - keytool -genkeypair -v -keystore keys/upload.jks -alias upload -keyalg RSA -keysize 4096 -validity 36500 -storepass "Dylalee12" -keypass "Dylalee12" -dname "CN=KomBLE, OU=KomBLE, O=KomBLE, L=City, S=State, C=US"
+- Built signed artifacts:
+  - ./gradlew :app:bundleRelease :app:assembleRelease
+Notes
+
+- keystore.properties and keys/ are ignored by .gitignore . If you plan to share the repo, distribute the keystore and properties securely outside version control.
+- You can upload app-release.aab to Play Console. Keep the upload keystore safe; it is required for future releases.
