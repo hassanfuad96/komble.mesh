@@ -11,6 +11,12 @@ import android.widget.TextView
 import com.bitchat.android.db.AppDatabaseHelper
 
 class KomPrintProgressActivity : Activity() {
+    /**
+     * Shows a simple progress UI while KomPrint processes the queued job.
+     * Automatically returns to the originating app package if provided via
+     * the "return_pkg" extra (from the deeplink referrer) once printing is done
+     * or when a terminal error occurs (e.g., missing main printer).
+     */
     private val handler = Handler(Looper.getMainLooper())
     private var jobId: Long = -1L
     private lateinit var statusText: TextView
@@ -18,8 +24,10 @@ class KomPrintProgressActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val payload = intent?.getStringExtra("payload")
+        val returnPkg = intent?.getStringExtra("return_pkg")
         if (payload.isNullOrBlank()) {
             finish()
+            maybeReturnToCaller(returnPkg)
             return
         }
 
@@ -50,25 +58,50 @@ class KomPrintProgressActivity : Activity() {
                 }
                 sendBroadcast(intent)
             } catch (_: Throwable) {}
-            handler.postDelayed({ finish() }, 1500)
+            handler.postDelayed({
+                finish()
+                maybeReturnToCaller(returnPkg)
+            }, 800)
             return
         }
 
         jobId = AppDatabaseHelper(this).enqueuePrintJobWithId(payload)
         LocalPrintQueue.process(this)
-        pollUntilDone()
+        pollUntilDone(returnPkg)
     }
 
-    private fun pollUntilDone() {
+    /**
+     * Polls the local DB for job completion, then auto-finishes and returns
+     * to the originating app if available.
+     */
+    private fun pollUntilDone(returnPkg: String?) {
         handler.postDelayed({
             val done = AppDatabaseHelper(this).isPrintJobDone(jobId)
             if (done) {
                 statusText.text = "Done"
                 finish()
+                maybeReturnToCaller(returnPkg)
             } else {
-                pollUntilDone()
+                pollUntilDone(returnPkg)
             }
         }, 500)
+    }
+
+    /**
+     * Attempts to return to the originating app if the package name is known.
+     * Falls back to simply finishing the activity if launch fails.
+     */
+    private fun maybeReturnToCaller(returnPkg: String?) {
+        if (returnPkg.isNullOrBlank()) return
+        try {
+            val launch = packageManager.getLaunchIntentForPackage(returnPkg)
+            if (launch != null) {
+                launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launch)
+            }
+        } catch (_: Throwable) {
+            // ignore; best-effort return
+        }
     }
 
     override fun onDestroy() {

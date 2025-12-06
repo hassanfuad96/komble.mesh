@@ -54,6 +54,9 @@ object MerchantWebSocketManager {
     private val reconnectsScheduled = AtomicInteger(0)
     private val reconnectsCompleted = AtomicInteger(0)
 
+    // Cache application context for safe DB logging when stopping
+    private var appContextRef: Context? = null
+
     // Small de-duplication window for order_id to avoid repeated prints
     private const val DEDUP_WINDOW_MS = 15_000L
     private val recentPaidEvents = ConcurrentHashMap<String, Long>()
@@ -98,12 +101,32 @@ object MerchantWebSocketManager {
         return false
     }
 
+    /**
+     * Start the Merchant WebSocket connection.
+     * - Loads auto-print preferences
+     * - Validates current user (logs ws_start_skipped if absent)
+     * - Initiates connection and marks manager started
+     */
     fun start(context: Context) {
         if (isStarted) return
         val appContext = context.applicationContext
+        appContextRef = appContext
         val auth = MerchantAuthManager.getInstance(appContext)
         val user = auth.getCurrentUser() ?: run {
             Log.w(TAG, "start: no current user; skipping websocket start")
+            // Log start skipped to WebSocket event logs
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(appContext).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "start_skipped=no_user",
+                        type = "ws_start_skipped",
+                        success = false
+                    )
+                )
+            } catch (_: Exception) { }
             return
         }
         getAutoPrintEvents(appContext)
@@ -112,6 +135,10 @@ object MerchantWebSocketManager {
         isStarted = true
     }
 
+    /**
+     * Stop the Merchant WebSocket connection and reset state.
+     * Logs ws_stopped to DB for visibility in WebSocket Event Logs.
+     */
     fun stop() {
         try {
             webSocket?.close(1000, "logout")
@@ -122,9 +149,25 @@ object MerchantWebSocketManager {
         shouldRun = false
         reconnectAttempts = 0
         Log.d(TAG, "WebSocket stopped")
+        // Log stopped state
+        try {
+            appContextRef?.let { ctx ->
+                com.bitchat.android.db.AppDatabaseHelper(ctx).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "stopped",
+                        type = "ws_stopped",
+                        success = true
+                    )
+                )
+            }
+        } catch (_: Exception) { }
     }
 
     private fun connect(context: Context) {
+        appContextRef = context.applicationContext
         val auth = MerchantAuthManager.getInstance(context)
         val currentUser = auth.getCurrentUser() ?: run {
             Log.w(TAG, "connect: no current user; aborting")
@@ -139,6 +182,19 @@ object MerchantWebSocketManager {
             auth.getAuthorizationHeader()?.let { header ->
                 if (header.isNotBlank()) builder.header("Authorization", header)
             }
+            // Log connecting state to DB
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "connecting|url=" + url,
+                        type = "ws_connecting",
+                        success = true
+                    )
+                )
+            } catch (_: Exception) { }
             val request = builder.build()
             val client = OkHttpProvider.webSocketClient()
             webSocket = client.newWebSocket(request, PaidEventsListener(context))
@@ -146,21 +202,60 @@ object MerchantWebSocketManager {
             Log.d(TAG, "WebSocket connecting: $url")
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to create Merchant WebSocket", t)
+            // Log creation failure to DB
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "create_failed|msg=" + (t.message ?: ""),
+                        type = "ws_failure",
+                        success = false
+                    )
+                )
+            } catch (_: Exception) { }
         }
     }
 
     private fun scheduleReconnect(context: Context) {
         if (!shouldRun) return
-        val delayMs = min(BASE_BACKOFF_MS * (1L shl reconnectAttempts.coerceAtMost(10)), MAX_BACKOFF_MS)
+        val delayMs = kotlin.math.min(BASE_BACKOFF_MS * (1L shl reconnectAttempts.coerceAtMost(10)), MAX_BACKOFF_MS)
         reconnectAttempts += 1
         reconnectsScheduled.incrementAndGet()
         Log.w(TAG, "Scheduling reconnect in ${delayMs}ms (attempt=$reconnectAttempts)")
+        // Log reconnect scheduled
+        try {
+            com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                com.bitchat.android.db.PrintLog(
+                    printerId = null,
+                    host = "ws",
+                    port = 0,
+                    label = "reconnect_scheduled|delayMs=" + delayMs + "|attempt=" + reconnectAttempts,
+                    type = "ws_reconnect_scheduled",
+                    success = true
+                )
+            )
+        } catch (_: Exception) { }
         scope.launch {
             try {
                 delay(delayMs)
                 if (shouldRun) {
                     connect(context)
                     reconnectsCompleted.incrementAndGet()
+                    // Log reconnect completed
+                    try {
+                        com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                            com.bitchat.android.db.PrintLog(
+                                printerId = null,
+                                host = "ws",
+                                port = 0,
+                                label = "reconnect_completed|attempt=" + reconnectAttempts,
+                                type = "ws_reconnect_completed",
+                                success = true
+                            )
+                        )
+                    } catch (_: Exception) { }
                 }
             } catch (_: Throwable) {}
         }
@@ -170,6 +265,20 @@ object MerchantWebSocketManager {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             Log.d(TAG, "✅ Merchant WebSocket connected")
             connected = true
+            // Log connected state
+            val code = try { response.code } catch (_: Throwable) { 0 }
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "connected|code=" + code,
+                        type = "ws_connected",
+                        success = true
+                    )
+                )
+            } catch (_: Exception) { }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -470,11 +579,38 @@ object MerchantWebSocketManager {
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             Log.d(TAG, "Merchant WebSocket closing: $code $reason")
+            // Log closing state
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "closing|code=" + code + "|reason=" + reason,
+                        type = "ws_closing",
+                        success = true
+                    )
+                )
+            } catch (_: Exception) { }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             Log.d(TAG, "Merchant WebSocket closed: $code $reason")
             connected = false
+            // Log closed state
+            val ok = (code == 1000)
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "closed|code=" + code + "|reason=" + reason,
+                        type = "ws_closed",
+                        success = ok
+                    )
+                )
+            } catch (_: Exception) { }
             // Attempt reconnect with backoff
             scheduleReconnect(context)
         }
@@ -482,6 +618,20 @@ object MerchantWebSocketManager {
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Log.e(TAG, "❌ Merchant WebSocket failure: ${t.message}", t)
             connected = false
+            // Log failure state
+            val code = try { response?.code ?: 0 } catch (_: Throwable) { 0 }
+            try {
+                com.bitchat.android.db.AppDatabaseHelper(context).insertPrintLog(
+                    com.bitchat.android.db.PrintLog(
+                        printerId = null,
+                        host = "ws",
+                        port = 0,
+                        label = "failure|code=" + code + "|msg=" + (t.message ?: ""),
+                        type = "ws_failure",
+                        success = false
+                    )
+                )
+            } catch (_: Exception) { }
             // Attempt reconnect with backoff
             scheduleReconnect(context)
         }

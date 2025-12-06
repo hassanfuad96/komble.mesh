@@ -49,66 +49,92 @@ object PrinterManager {
      * Falls back to global selection store if printer has no selection.
      * Returns empty string if no items match selection.
      */
+    /**
+     * Format printable content for a given order and printer.
+     * - Loads order items from local DB for filtering and formatting.
+     * - Fallback: if the DB has no items yet, use products from the provided OrderDto (e.g., WebSocket payload),
+     *   persist them to the DB, and proceed. This prevents false negatives like 'no_matching_items' when the
+     *   order payload has not been stored before printing.
+     */
     suspend fun formatOrderForPrinter(context: Context, order: OrdersSyncWorker.OrderDto, printer: SavedPrinter): String {
         val auth = MerchantAuthManager.getInstance(context).getAuthorizationHeader()
         val categories = CategoriesApiService.fetchCategories(auth)
         val db = AppDatabaseHelper(context)
         // Load order items from DB for filtering/formatting
         val items: List<OrderItem> = db.getOrderItems(order.orderId)
-
+        // Fallback to WebSocket payload when DB comes up empty
+        val itemsEffective: List<OrderItem> = if (items.isEmpty()) {
+            val dtoItems = order.products?.map { p ->
+                OrderItem(
+                    itemId = p.id,
+                    name = (p.name ?: "(unknown)"),
+                    quantity = (p.quantity ?: 0),
+                    variant = p.variant,
+                    categoryId = p.categoryId,
+                    note = p.note,
+                    prepared = (p.prepared ?: false),
+                    printed = (p.printed ?: false)
+                )
+            } ?: emptyList()
+            if (dtoItems.isNotEmpty()) {
+                try { db.replaceOrderItems(order.orderId, dtoItems) } catch (_: Exception) { }
+            }
+            dtoItems
+        } else items
+    
         // Resolve selection: prefer printer-specific, else global
         val printerSelected = printer.selectedCategoryIds ?: emptyList()
         val includeAll = printerSelected.contains(0)
         val includeUncategorized = printer.uncategorizedSelected == true
         val filtered = if (includeAll) {
-            items
+            itemsEffective
         } else if (printerSelected.isEmpty() && !includeUncategorized) {
             // fall back to global store
-            val globalFiltered = CategoriesSelectionStore(context).filterOrderItems(items)
+            val globalFiltered = CategoriesSelectionStore(context).filterOrderItems(itemsEffective)
             globalFiltered
         } else {
             val selectedInts = printerSelected.toSet()
-            items.filter { item ->
+            itemsEffective.filter { item ->
                 val idInt = item.categoryId?.toIntOrNull()
                 (idInt != null && selectedInts.contains(idInt)) || (item.categoryId == null && includeUncategorized)
             }
         }
         if (filtered.isEmpty()) return ""
-
+    
         val sb = StringBuilder()
         if (printer.role == "station") {
             val dt = formatDisplayDate(order.createdAt)
-            appendLineIfNotBlank(sb, "Order #${order.orderId}")
-            appendLineIfNotBlank(sb, "Note: ${order.globalNote ?: ""}")
-            appendLineIfNotBlank(sb, "Table: ${order.tableNumber ?: "N/A"}")
-            appendLineIfNotBlank(sb, "Delivery: ${order.deliveryMethod}")
+            appendLineIfNotBlank(sb, "[C]Order: <font size='big'><b> #${order.orderId}</b></font>")
+            appendLineIfNotBlank(sb, "[C]Table: <font size='big'><b> ${order.tableNumber ?: "N/A"}</b></font>")
+            appendLineIfNotBlank(sb, "Note:<font size='big'><b> ${order.globalNote ?: ""}</b></font>")
+            appendLineIfNotBlank(sb, "Delivery:<font size='big'><b> ${order.deliveryMethod}</b></font>")
             appendLineIfNotBlank(sb, dt?.let { "Printed at: $it" })
             val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
             val is80 = widthMm >= 72
             val line = "-".repeat(if (is80) 42 else 32)
             sb.append("[C]$line\n")
-
+    
             val grouped = filtered.groupBy { it.categoryId?.toIntOrNull() }
             grouped.forEach { (idInt, groupItems) ->
                 val catName = CategoriesApiService.getCategoryName(categories, idInt)
-                sb.append("[C]<b>${catName}</b>\n")
+                sb.append("[C]<font size='big'><b>${catName}</b></font>\n")
                 sb.append("[C]$line\n")
                 groupItems.forEach { item ->
                     val variant = item.variant?.let { " ($it)" } ?: ""
-                    sb.append("[L]${item.name}$variant[R]x${item.quantity}\n")
+                    sb.append("[L]<font size='big'><b>${item.name}$variant</b></font>[R]<font size='big'><b>x${item.quantity}</b></font>\n")
                     if (!item.note.isNullOrBlank()) {
-                        sb.append("  Note: ${item.note}\n")
+                        sb.append("  <b>Note: ${item.note}</b>\n")
                     }
                 }
                 sb.append("[C]$line\n")
             }
             return sb.toString().trimEnd()
         } else {
-            appendLineIfNotBlank(sb, "Komers")
-            appendLineIfNotBlank(sb, "Order #${order.orderId}")
+            appendLineIfNotBlank(sb, "[C]Order<font size='big'><b> #${order.orderId}</b></font>")
+            appendLineIfNotBlank(sb, "[C]Table: <font size='big'><b> ${order.tableNumber ?: "N/A"}</b></font>")
             appendLineIfNotBlank(sb, formatDisplayDate(order.createdAt))
             appendLineIfNotBlank(sb, "Status: ${order.status}")
-            appendLineIfNotBlank(sb, "Note: ${order.globalNote ?: ""}")
+            appendLineIfNotBlank(sb, "<font size='big'><b>Note: ${order.globalNote ?: ""}</b></font>")
             val customer = order.customerName?.trim()
             if (!customer.isNullOrBlank() && customer.lowercase() != "none") {
                 appendLineIfNotBlank(sb, "Customer: ${customer}")
@@ -117,17 +143,17 @@ object PrinterManager {
             if (!phone.isNullOrBlank() && phone.lowercase() != "none") {
                 appendLineIfNotBlank(sb, "Phone: ${phone}")
             }
-            appendLineIfNotBlank(sb, "Table: ${order.tableNumber ?: "N/A"}")
-            appendLineIfNotBlank(sb, "Delivery: ${order.deliveryMethod}")
+            // appendLineIfNotBlank(sb, "<font size='big'><b>Table: ${order.tableNumber ?: "N/A"}</b></font>")
+            appendLineIfNotBlank(sb, "<font size='big'><b>Delivery: ${order.deliveryMethod}</b></font>")
             sb.append("------------------------------\n")
             filtered.forEach { item ->
                 val idInt = item.categoryId?.toIntOrNull()
                 val catName = CategoriesApiService.getCategoryName(categories, idInt)
                 val qty = item.quantity
                 val variant = item.variant?.let { " ($it)" } ?: ""
-                sb.append("${item.name}$variant x$qty\n")
+                sb.append("[L]<font size='big'><b>${item.name}$variant</b></font>[R]<font size='big'><b>x$qty</b></font>\n")
                 if (!item.note.isNullOrBlank()) {
-                    sb.append("  Note: ${item.note}\n")
+                    sb.append("  <font size='big'><b>Note: ${item.note}</b></font>\n")
                 }
                 sb.append("  [${catName}]\n")
             }
@@ -148,8 +174,19 @@ object PrinterManager {
     }
 
     /**
-     * Print the content to the given printer and apply status updates after successful print.
+     * Strips DantSu EscPosPrinter inline markup tokens to plain text for raw TCP fallback.
+     * Removes [C], [L], [R] alignment markers and <b> tags so printers that read UTF-8 bytes directly
+     * (via raw 9100 socket) will not print these literals.
      */
+    private fun stripEscPosMarkup(text: String): String {
+        return text
+            .replace(Regex("\\[(C|L|R)\\]"), "")
+            .replace("<b>", "")
+            .replace("</b>", "")
+            .replace(Regex("<font[^>]*>"), "")
+            .replace("</font>", "")
+    }
+
     suspend fun printOrder(context: Context, printer: SavedPrinter, content: String, order: OrdersSyncWorker.OrderDto): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -206,24 +243,65 @@ object PrinterManager {
                         }
                     }
                 } else {
-                    val connection = com.dantsu.escposprinter.connection.tcp.TcpConnection(printer.host, printer.port)
-                    val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
-                    val is80 = widthMm >= 72
-                    val chars = if (is80) 42 else 32
-                    val mm = if (is80) 72f else 48f
-                    val dpi = when (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM) { 12 -> 300; else -> 203 }
-                    val escpos = EscPosPrinter(connection, dpi, mm, chars)
+                    // TCP/IP ESC/POS printing path
+                    var tcpOk = false
+                    try {
+                        val connection = com.dantsu.escposprinter.connection.tcp.TcpConnection(printer.host, printer.port)
+                        val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
+                        val is80 = widthMm >= 72
+                        val chars = if (is80) 42 else 32
+                        val mm = if (is80) 72f else 48f
+                        val dpi = when (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM) { 12 -> 300; else -> 203 }
+                        val escpos = EscPosPrinter(connection, dpi, mm, chars)
+                        try {
+                            val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
+                            if (initBytes != null) connection.write(initBytes)
+                        } catch (_: Exception) { }
+                        escpos.printFormattedText(content)
+                        try {
+                            val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
+                            if (cutterBytes != null) connection.write(cutterBytes)
+                        } catch (_: Exception) { }
+                        escpos.printFormattedText("[C]\n[C]\n")
+                        tcpOk = true
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "TCP DantSu print failed, will try raw fallback", t)
+                        tcpOk = false
+                    }
+                    if (!tcpOk) {
+                        // Fallback to raw TCP client using the same init/cutter bytes
+                        try {
+                            val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
+                            val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
+                            tcpOk = EscPosPrinterClient().printRichText(
+                            host = printer.host,
+                            port = printer.port,
+                            content = content + "\n\n",
+                            initBytes = initBytes,
+                            cutterBytes = cutterBytes
+                            )
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "TCP raw fallback failed", t)
+                            tcpOk = false
+                        }
+                    }
+                    tcpOk
+                    // Force raw TCP printing with rich-text translation (bold, size, alignment, QR)
                     try {
                         val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
-                        if (initBytes != null) connection.write(initBytes)
-                    } catch (_: Exception) { }
-                    escpos.printFormattedText(content)
-                    try {
                         val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
-                        if (cutterBytes != null) connection.write(cutterBytes)
-                    } catch (_: Exception) { }
-                    escpos.printFormattedText("[C]\n[C]\n")
-                    true
+                        val okRaw = EscPosPrinterClient().printRichText(
+                            host = printer.host,
+                            port = printer.port,
+                            content = content + "\n\n",
+                            initBytes = initBytes,
+                            cutterBytes = cutterBytes
+                        )
+                        okRaw
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "TCP raw print failed", t)
+                        false
+                    }
                 }
                 if (ok) {
                     updateStatusesAfterPrint(context, order, printer)

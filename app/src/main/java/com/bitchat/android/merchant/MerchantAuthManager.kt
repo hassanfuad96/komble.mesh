@@ -79,6 +79,7 @@ class MerchantAuthManager(private val context: Context) {
     
     /**
      * Store successful login data
+     * Also auto-connect Merchant WebSocket and start the foreground service to maintain connectivity
      */
     fun storeAuthenticationData(loginData: MerchantLoginData) {
         try {
@@ -96,10 +97,15 @@ class MerchantAuthManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to store authentication data", e)
         }
+        
+        // Ensure websocket is connected immediately on successful login
+        try { MerchantOrdersForegroundService.start(context) } catch (_: Exception) { }
+        try { MerchantWebSocketManager.start(context) } catch (_: Exception) { }
     }
     
     /**
      * Clear authentication state (logout)
+     * Also stop Merchant WebSocket and foreground service to immediately disconnect
      */
     fun clearAuthenticationState() {
         try {
@@ -117,6 +123,10 @@ class MerchantAuthManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to clear authentication state", e)
         }
+        
+        // Stop websocket and foreground service as part of logout
+        try { MerchantWebSocketManager.stop() } catch (_: Exception) { }
+        try { MerchantOrdersForegroundService.stop(context) } catch (_: Exception) { }
     }
     
     /**

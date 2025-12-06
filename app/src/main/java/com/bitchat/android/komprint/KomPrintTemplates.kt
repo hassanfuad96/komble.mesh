@@ -28,6 +28,11 @@ object KomPrintTemplates {
     fun format80(order: KomPrintPayload): String = format58(order)
     fun formatKitchen(order: KomPrintPayload): String = format58(order)
     fun formatReceipt(order: KomPrintPayload): String = format58(order)
+    /**
+     * Formats the main E-Receipt with rich-text tags for alignment, bold and larger font.
+     * - Item lines: bold with increased font size.
+     * - Total line: bold with increased font size.
+     */
     fun formatMainEReceipt(order: KomPrintPayload): String {
         val df = java.text.DecimalFormat("0.00")
         val orderId = order.order.orderId
@@ -39,22 +44,26 @@ object KomPrintTemplates {
         val sb = StringBuilder()
         sb.append("[C]<b>E-RECEIPT</b>\n")
         sb.append("[C]Order#: $orderId\n")
-        sb.append("[C]Total: ${df.format(total)}\n")
         sb.append("[C]$line\n")
         sb.append("[C]Items:\n")
         order.order.products.forEach { p ->
             val left = p.name
             val right = df.format(p.price ?: 0.0)
-            sb.append("[L]$left x${p.qty}[R]$right\n")
+            // Bold and increased font size for item details
+            sb.append("[L]<font size='big'><b>$left x${p.qty}</b></font>[R]<font size='big'><b>$right</b></font>\n")
         }
         sb.append("[C]$line\n")
-        sb.append("[C]Scan for full receipt\n")
+        // Bold and increased font size for total
+        sb.append("[C]<font size='big'><b>Total: ${df.format(total)}</b></font>\n")
         sb.append("[C]$line\n")
-        sb.append("[C]<qrcode size='20'>$url</qrcode>\n")
-        sb.append("[C]\n")
+        sb.append("[C]Scan for full receipt\n")
+        sb.append("$line\n")
+        // Use smaller QR code module size for compact display
+        sb.append("[C]<qrcode size='10'>$url</qrcode>\n")
+        sb.append("\n")
         sb.append("[C]Or visit:\n")
         sb.append("[C]$url\n")
-        sb.append("[C]\n")
+        sb.append("\n")
         sb.append("[C]Thank you!\n")
         sb.append("[C]Powered by Komers.io\n")
         return sb.toString()
