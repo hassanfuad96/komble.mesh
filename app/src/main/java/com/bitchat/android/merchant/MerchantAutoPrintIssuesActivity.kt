@@ -48,48 +48,47 @@ fun MerchantAutoPrintIssuesScreen() {
     fun refresh() {
         val logs = AppDatabaseHelper(context).queryRecentLogs(limit = 500)
         val receiveMap = mutableMapOf<String, Long>()
-        logs.filter { it.type == "ws_receive" }.forEach { log ->
-            val oid = parseOrderId(log.label)
-            if (!oid.isNullOrBlank()) receiveMap[oid] = log.timestamp
-        }
         val printedOk = mutableSetOf<String>()
-        val missingStationAt = mutableSetOf<String>()
-        val noMatchAt = mutableSetOf<String>()
+        val reasons = mutableMapOf<String, String>()
+
+        fun addReason(orderId: String, r: String) {
+            val prev = reasons[orderId]
+            if (prev == null) reasons[orderId] = r else reasons[orderId] = prev
+        }
 
         logs.forEach { log ->
-            if (log.type == "ws_print") {
-                if (log.success) {
-                    // Success: cannot derive order directly; mark globally to exclude if paired later
-                } else {
-                    if ((log.label ?: "").contains("no_station_printers")) {
-                        // Associate with most recent receive order within a short window
-                        val nearest = receiveMap.entries.maxByOrNull { it.value ?: 0L }
-                        nearest?.let { missingStationAt.add(it.key) }
-                    } else if ((log.label ?: "").contains("no_matching_items")) {
-                        val nearest = receiveMap.entries.maxByOrNull { it.value ?: 0L }
-                        nearest?.let { noMatchAt.add(it.key) }
+            when (log.type) {
+                "ws_receive" -> {
+                    val oid = parseOrderId(log.label)
+                    if (!oid.isNullOrBlank()) receiveMap[oid] = log.timestamp
+                }
+                "ws_print", "poll_print", "komprint_station" -> {
+                    val oid = parseOrderId(log.label)
+                    if (!oid.isNullOrBlank()) {
+                        if (log.success) {
+                            printedOk.add(oid)
+                        } else {
+                            val lbl = (log.label ?: "")
+                            when {
+                                lbl.contains("no_station_printers") -> addReason(oid, "No station printers")
+                                lbl.contains("no_matching_items") -> addReason(oid, "No matching items")
+                                lbl.contains("auto_print_skipped=printers") -> addReason(oid, "Auto print skipped: no station printers")
+                                else -> addReason(oid, "Print error")
+                            }
+                        }
                     }
                 }
-            }
-            if (log.type == "ws_print" && log.success) {
-                // Heuristic: if success shortly after a receive, treat order as printed
-                // We can't parse order id from log; exclude all recent candidates to reduce noise
-                // Leave issues only when explicit failure markers exist
-                // printedOk remains unused; kept for future improvements
+                else -> {}
             }
         }
 
-        val allIssueIds = (missingStationAt + noMatchAt).toSet()
-        val rows = allIssueIds.map { oid ->
-            val reason = when {
-                missingStationAt.contains(oid) -> "No station printers"
-                noMatchAt.contains(oid) -> "No matching items"
-                else -> "Auto print failed"
-            }
+        // Orders that have a receive but no successful print should surface
+        val candidates = receiveMap.keys.filter { it !in printedOk }
+        val rows = candidates.map { oid ->
+            val reason = reasons[oid] ?: "No print recorded"
             IssueRow(orderId = oid, reason = reason, timestamp = receiveMap[oid])
         }
         issues = rows.distinctBy { it.orderId }
-        // Prune selections for unseen items
         val visibleIds = issues.map { it.orderId }.toSet()
         selected.keys.filter { it !in visibleIds }.forEach { selected.remove(it) }
     }
@@ -163,4 +162,3 @@ fun MerchantAutoPrintIssuesScreen() {
         }
     }
 }
-

@@ -94,9 +94,9 @@ object LocalPrintQueue {
                     mains.forEach { p ->
                         try {
                             val okMain = PrinterManager.printOrder(context, p, receiptContent, dto)
-                            db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, p.label, "komprint_main", okMain))
+                            db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_main", okMain))
                             if (okMain) anyOk = true
-                        } catch (_: Exception) { db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, p.label, "komprint_main", false)) }
+                        } catch (_: Exception) { db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_main", false)) }
                     }
                     // Station printers: category-aware content
                     stations.forEach { p ->
@@ -104,12 +104,12 @@ object LocalPrintQueue {
                             val content = PrinterManager.formatOrderForPrinter(context, dto, p)
                             if (content.isNotBlank()) {
                                 val okSt = PrinterManager.printOrder(context, p, content, dto)
-                                db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, p.label, "komprint_station", okSt))
+                                db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_station", okSt))
                                 if (okSt) anyOk = true
                             } else {
-                                db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "empty", "komprint_station", false))
+                                db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "empty|order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_station", false))
                             }
-                        } catch (_: Exception) { db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, p.label, "komprint_station", false)) }
+                        } catch (_: Exception) { db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_station", false)) }
                     }
                     anyOk
                 } catch (_: Exception) { false }

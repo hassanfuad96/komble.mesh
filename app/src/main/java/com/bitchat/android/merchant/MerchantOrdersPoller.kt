@@ -356,7 +356,7 @@ object MerchantOrdersPoller {
                                                     printerId = printer.id,
                                                     host = printer.host,
                                                     port = printer.port,
-                                                    label = printer.label,
+                                                    label = "order=" + o.orderId + "|printer=" + (printer.label ?: ""),
                                                     type = "poll_print",
                                                     success = ok
                                                 )
@@ -372,7 +372,7 @@ object MerchantOrdersPoller {
                                                     printerId = printer.id,
                                                     host = printer.host,
                                                     port = printer.port,
-                                                    label = "no_matching_items",
+                                                    label = "no_matching_items|order=" + o.orderId + "|printer=" + (printer.label ?: ""),
                                                     type = "poll_print",
                                                     success = false
                                                 )
@@ -386,7 +386,7 @@ object MerchantOrdersPoller {
                                                 printerId = printer.id,
                                                 host = printer.host,
                                                 port = printer.port,
-                                                label = printer.label,
+                                                label = "error|order=" + o.orderId + "|printer=" + (printer.label ?: ""),
                                                 type = "poll_print",
                                                 success = false
                                             )

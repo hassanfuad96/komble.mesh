@@ -496,7 +496,7 @@ object MerchantWebSocketManager {
                                         printerId = null,
                                         host = "ws",
                                         port = 0,
-                                        label = "auto_print_skipped=printers|reason=no_station_printers",
+                                        label = "auto_print_skipped=printers|reason=no_station_printers|order=" + orderId,
                                         type = "ws_print",
                                         success = false
                                     )
@@ -532,7 +532,7 @@ object MerchantWebSocketManager {
                                                 printerId = printer.id,
                                                 host = printer.host,
                                                 port = printer.port,
-                                                label = printer.label,
+                                                label = "order=" + orderId + "|printer=" + (printer.label ?: ""),
                                                 type = "ws_print",
                                                 success = ok
                                             )
@@ -546,7 +546,7 @@ object MerchantWebSocketManager {
                                                 printerId = printer.id,
                                                 host = printer.host,
                                                 port = printer.port,
-                                                label = "no_matching_items",
+                                                label = "no_matching_items|order=" + orderId + "|printer=" + (printer.label ?: ""),
                                                 type = "ws_print",
                                                 success = false
                                             )
@@ -562,7 +562,7 @@ object MerchantWebSocketManager {
                                             printerId = printer.id,
                                             host = printer.host,
                                             port = printer.port,
-                                            label = printer.label,
+                                            label = "error|order=" + orderId + "|printer=" + (printer.label ?: ""),
                                             type = "ws_print",
                                             success = false
                                         )

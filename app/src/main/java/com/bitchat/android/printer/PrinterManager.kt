@@ -243,61 +243,16 @@ object PrinterManager {
                         }
                     }
                 } else {
-                    // TCP/IP ESC/POS printing path
-                    var tcpOk = false
-                    try {
-                        val connection = com.dantsu.escposprinter.connection.tcp.TcpConnection(printer.host, printer.port)
-                        val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
-                        val is80 = widthMm >= 72
-                        val chars = if (is80) 42 else 32
-                        val mm = if (is80) 72f else 48f
-                        val dpi = when (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM) { 12 -> 300; else -> 203 }
-                        val escpos = EscPosPrinter(connection, dpi, mm, chars)
-                        try {
-                            val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
-                            if (initBytes != null) connection.write(initBytes)
-                        } catch (_: Exception) { }
-                        escpos.printFormattedText(content)
-                        try {
-                            val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
-                            if (cutterBytes != null) connection.write(cutterBytes)
-                        } catch (_: Exception) { }
-                        escpos.printFormattedText("[C]\n[C]\n")
-                        tcpOk = true
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "TCP DantSu print failed, will try raw fallback", t)
-                        tcpOk = false
-                    }
-                    if (!tcpOk) {
-                        // Fallback to raw TCP client using the same init/cutter bytes
-                        try {
-                            val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
-                            val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
-                            tcpOk = EscPosPrinterClient().printRichText(
-                            host = printer.host,
-                            port = printer.port,
-                            content = content + "\n\n",
-                            initBytes = initBytes,
-                            cutterBytes = cutterBytes
-                            )
-                        } catch (t: Throwable) {
-                            Log.e(TAG, "TCP raw fallback failed", t)
-                            tcpOk = false
-                        }
-                    }
-                    tcpOk
-                    // Force raw TCP printing with rich-text translation (bold, size, alignment, QR)
                     try {
                         val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
                         val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
-                        val okRaw = EscPosPrinterClient().printRichText(
+                        EscPosPrinterClient().printRichText(
                             host = printer.host,
                             port = printer.port,
                             content = content + "\n\n",
                             initBytes = initBytes,
                             cutterBytes = cutterBytes
                         )
-                        okRaw
                     } catch (t: Throwable) {
                         Log.e(TAG, "TCP raw print failed", t)
                         false
