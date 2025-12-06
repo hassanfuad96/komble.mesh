@@ -494,6 +494,80 @@ class ChatViewModel(
         }
     }
 
+    fun sendCtaMessage(toPeerIDOrNull: String?, channelOrNull: String?, url: String, label: String, body: String) {
+        try {
+            val normalizedUrl = url.trim()
+            var selectedPeer = toPeerIDOrNull
+            val currentChannelValue = channelOrNull ?: state.getCurrentChannelValue()
+
+            if (!normalizedUrl.isNotEmpty()) return
+
+            if (selectedPeer != null) {
+                selectedPeer = com.bitchat.android.services.ConversationAliasResolver.resolveCanonicalPeerID(
+                    selectedPeerID = selectedPeer,
+                    connectedPeers = state.getConnectedPeersValue(),
+                    meshNoiseKeyForPeer = { pid -> meshService.getPeerInfo(pid)?.noisePublicKey },
+                    meshHasPeer = { pid -> meshService.getPeerInfo(pid)?.isConnected == true },
+                    nostrPubHexForAlias = { alias -> com.bitchat.android.nostr.GeohashAliasRegistry.get(alias) },
+                    findNoiseKeyForNostr = { key -> com.bitchat.android.favorites.FavoritesPersistenceService.shared.findNoiseKey(key) }
+                ).also { canonical ->
+                    if (canonical != state.getSelectedPrivateChatPeerValue()) {
+                        privateChatManager.startPrivateChat(canonical, meshService)
+                    }
+                }
+                val recipientNickname = meshService.getPeerNicknames()[selectedPeer]
+                val message = BitchatMessage(
+                    sender = state.getNicknameValue() ?: meshService.myPeerID,
+                    content = body,
+                    type = com.bitchat.android.model.BitchatMessageType.CTA,
+                    timestamp = Date(),
+                    isRelay = false,
+                    isPrivate = true,
+                    recipientNickname = recipientNickname,
+                    senderPeerID = meshService.myPeerID,
+                    deliveryStatus = com.bitchat.android.model.DeliveryStatus.Sending,
+                    ctaLabel = label,
+                    ctaUrl = normalizedUrl,
+                    ctaBody = body
+                )
+                messageManager.addPrivateMessage(selectedPeer!!, message)
+                val router = com.bitchat.android.services.MessageRouter.getInstance(getApplication(), meshService)
+                router.sendPrivate(normalizedUrl, selectedPeer!!, recipientNickname ?: "", message.id)
+            } else {
+                val selectedLocationChannel = state.selectedLocationChannel.value
+                if (selectedLocationChannel is com.bitchat.android.geohash.ChannelID.Location) {
+                    geohashViewModel.sendGeohashMessage(
+                        body,
+                        selectedLocationChannel.channel,
+                        meshService.myPeerID,
+                        state.getNicknameValue(),
+                        type = com.bitchat.android.model.BitchatMessageType.CTA
+                    )
+                } else {
+                    val message = BitchatMessage(
+                        sender = state.getNicknameValue() ?: meshService.myPeerID,
+                        content = body,
+                        type = com.bitchat.android.model.BitchatMessageType.CTA,
+                        timestamp = Date(),
+                        isRelay = false,
+                        senderPeerID = meshService.myPeerID,
+                        channel = currentChannelValue,
+                        ctaLabel = label,
+                        ctaUrl = normalizedUrl,
+                        ctaBody = body
+                    )
+                    if (currentChannelValue != null) {
+                        channelManager.addChannelMessage(currentChannelValue, message, meshService.myPeerID)
+                        meshService.sendMessage(normalizedUrl, emptyList(), currentChannelValue)
+                    } else {
+                        messageManager.addMessage(message)
+                        meshService.sendMessage(normalizedUrl, emptyList(), null)
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
     // MARK: - Utility Functions
     
     fun getPeerIDForNickname(nickname: String): String? {

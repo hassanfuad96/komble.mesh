@@ -12,7 +12,8 @@ enum class BitchatMessageType : Parcelable {
     Message,
     Audio,
     Image,
-    File
+    File,
+    CTA
 }
 
 /**
@@ -69,7 +70,11 @@ data class BitchatMessage(
     val encryptedContent: ByteArray? = null,
     val isEncrypted: Boolean = false,
     val deliveryStatus: DeliveryStatus? = null,
-    val powDifficulty: Int? = null
+    val powDifficulty: Int? = null,
+    // CTA-specific optional fields
+    val ctaLabel: String? = null,
+    val ctaUrl: String? = null,
+    val ctaBody: String? = null
 ) : Parcelable {
 
     /**
@@ -331,6 +336,9 @@ data class BitchatMessage(
         } else if (other.encryptedContent != null) return false
         if (isEncrypted != other.isEncrypted) return false
         if (deliveryStatus != other.deliveryStatus) return false
+        if (ctaLabel != other.ctaLabel) return false
+        if (ctaUrl != other.ctaUrl) return false
+        if (ctaBody != other.ctaBody) return false
 
         return true
     }
@@ -351,8 +359,9 @@ data class BitchatMessage(
         result = 31 * result + (encryptedContent?.contentHashCode() ?: 0)
         result = 31 * result + isEncrypted.hashCode()
         result = 31 * result + (deliveryStatus?.hashCode() ?: 0)
+        result = 31 * result + (ctaLabel?.hashCode() ?: 0)
+        result = 31 * result + (ctaUrl?.hashCode() ?: 0)
+        result = 31 * result + (ctaBody?.hashCode() ?: 0)
         return result
     }
 }
-
-

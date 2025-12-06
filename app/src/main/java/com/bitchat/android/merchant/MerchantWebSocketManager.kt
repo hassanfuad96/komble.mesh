@@ -33,7 +33,7 @@ object MerchantWebSocketManager {
 
     private const val DEFAULT_WS_URL = "wss://komers-realtime-hub.bekreatif2020-4d4.workers.dev/ws"
     private const val KEY_AUTO_PRINT_EVENTS = "merchant_auto_print_events"
-    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("order.created", "paid", "order.paid", "order.printed")
+    private val DEFAULT_AUTO_PRINT_EVENTS = setOf("paid", "order.paid")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null

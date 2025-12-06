@@ -283,6 +283,85 @@ fun MessageItem(
         return
     }
 
+    // CTA special rendering: body text plus action button
+    if (message.type == BitchatMessageType.CTA) {
+        val context = LocalContext.current
+        val isSelf = message.senderPeerID == meshService.myPeerID ||
+                message.sender == currentUserNickname ||
+                message.sender.startsWith("$currentUserNickname#")
+
+        Column(modifier = modifier.fillMaxWidth()) {
+            val headerText = formatMessageHeaderAnnotatedString(
+                message = message,
+                currentUserNickname = currentUserNickname,
+                meshService = meshService,
+                colorScheme = colorScheme,
+                timeFormatter = timeFormatter
+            )
+            val haptic = LocalHapticFeedback.current
+            var headerLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+            if (!isSelf) {
+                Text(
+                    text = headerText,
+                    fontFamily = FontFamily.Monospace,
+                    color = colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.Start)
+                        .pointerInput(message.id) {
+                            detectTapGestures(onTap = { pos ->
+                                val layout = headerLayout ?: return@detectTapGestures
+                                val offset = layout.getOffsetForPosition(pos)
+                                val ann = headerText.getStringAnnotations("nickname_click", offset, offset)
+                                if (ann.isNotEmpty() && onNicknameClick != null) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNicknameClick.invoke(ann.first().item)
+                                }
+                            }, onLongPress = { onMessageLongPress?.invoke(message) })
+                        },
+                    onTextLayout = { headerLayout = it }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
+            ) {
+                Surface(
+                    color = if (MaterialTheme.colorScheme.background == Color.Black) Color(0xFF262627) else Color(0xFFFFFFFF),
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 1.dp,
+                    shadowElevation = 1.dp
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val bodyText = (message.ctaBody ?: message.content).trim()
+                        if (bodyText.isNotEmpty()) {
+                            Text(
+                                text = bodyText,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (MaterialTheme.colorScheme.background == Color.Black) Color(0xFFDCF8C6) else Color.Black
+                            )
+                        }
+                        val label = message.ctaLabel ?: "Open Link"
+                        val url = message.ctaUrl ?: message.content
+                        Button(onClick = {
+                            try {
+                                val resolved = if (url.startsWith("http://", true) || url.startsWith("https://", true)) url else "https://$url"
+                                val intent = Intent(context, com.bitchat.android.ui.InAppWebViewActivity::class.java)
+                                intent.putExtra("url", resolved)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (_: Exception) { }
+                        }, modifier = Modifier.fillMaxWidth()) {
+                            Text(text = label)
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
     // File special rendering
     if (message.type == BitchatMessageType.File) {
         val path = message.content.trim()
@@ -491,9 +570,16 @@ fun MessageItem(
                             val raw = urlAnnotations.first().item
                             val resolved = if (raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true)) raw else "https://$raw"
                             try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(resolved))
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(intent)
+                                if (message.type == BitchatMessageType.CTA) {
+                                    val intent = Intent(context, com.bitchat.android.ui.InAppWebViewActivity::class.java)
+                                    intent.putExtra("url", resolved)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } else {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(resolved))
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                }
                             } catch (_: Exception) { }
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             return@detectTapGestures

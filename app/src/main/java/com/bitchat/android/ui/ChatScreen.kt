@@ -393,12 +393,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
     if (showAttachMenuSheet) {
         AttachMenuSheet(
             onDismiss = { showAttachMenuSheet = false },
-            onPickImage = { outPath ->
-                viewModel.sendImageNote(selectedPrivatePeer, currentChannel, outPath)
-                showAttachMenuSheet = false
-            },
-            onPickFile = { outPath ->
-                viewModel.sendFileNote(selectedPrivatePeer, currentChannel, outPath)
+            onCreateCTA = { url, label, body ->
+                viewModel.sendCtaMessage(selectedPrivatePeer, currentChannel, url, label, body)
                 showAttachMenuSheet = false
             }
         )
@@ -603,8 +599,7 @@ private fun ChatDialogs(
 @Composable
 private fun AttachMenuSheet(
     onDismiss: () -> Unit,
-    onPickImage: (String) -> Unit,
-    onPickFile: (String) -> Unit
+    onCreateCTA: (String, String, String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val colorScheme = MaterialTheme.colorScheme
@@ -618,38 +613,47 @@ private fun AttachMenuSheet(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            var ctaUrl by remember { mutableStateOf("") }
+            var ctaLabel by remember { mutableStateOf("") }
+            var ctaBody by remember { mutableStateOf("") }
             Text(
-                text = stringResource(com.bitchat.android.R.string.cd_pick_media),
-                style = MaterialTheme.typography.titleMedium,
+                text = "CTA message",
+                style = MaterialTheme.typography.titleSmall,
                 color = colorScheme.onSurface
             )
-
-            // Image row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            androidx.compose.material3.OutlinedTextField(
+                value = ctaUrl,
+                onValueChange = { ctaUrl = it },
+                singleLine = true,
+                placeholder = { Text("Enter URL") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = ctaLabel,
+                onValueChange = { ctaLabel = it },
+                singleLine = true,
+                placeholder = { Text("Button label e.g. Contact Us") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = ctaBody,
+                onValueChange = { ctaBody = it },
+                singleLine = false,
+                placeholder = { Text("Message body") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 4
+            )
+            Button(
+                onClick = {
+                    if (ctaUrl.isNotBlank()) {
+                        onCreateCTA(ctaUrl, ctaLabel.ifBlank { "Open Link" }, ctaBody)
+                        onDismiss()
+                    }
+                },
+                enabled = ctaUrl.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                ImagePickerButton(onImageReady = onPickImage)
-                Text(
-                    text = stringResource(com.bitchat.android.R.string.pick_image),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colorScheme.onSurface
-                )
-            }
-
-            // File row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                FilePickerButton(onFileReady = onPickFile)
-                Text(
-                    text = stringResource(com.bitchat.android.R.string.pick_file),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colorScheme.onSurface
-                )
+                Text(text = "Send CTA")
             }
 
             // Cancel

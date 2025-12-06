@@ -73,6 +73,11 @@
             android:theme="@style/Theme.BitchatAndroid"
             android:windowSoftInputMode="adjustResize" />
         <activity
+            android:name=".ui.InAppWebViewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BitchatAndroid"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"

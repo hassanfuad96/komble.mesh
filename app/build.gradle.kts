@@ -15,8 +15,8 @@ android {
         applicationId = "com.komble.mesh"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 26
-        versionName = "1.5.1"
+        versionCode = 28
+        versionName = "1.5.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -85,6 +85,8 @@ android {
             }
         }
     }
+
+    // Native symbols will be exported via Gradle tasks for Play symbolication
 }
 
 dependencies {

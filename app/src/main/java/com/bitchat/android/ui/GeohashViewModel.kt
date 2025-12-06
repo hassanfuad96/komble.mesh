@@ -98,7 +98,7 @@ class GeohashViewModel(
         initialize()
     }
 
-    fun sendGeohashMessage(content: String, channel: com.bitchat.android.geohash.GeohashChannel, myPeerID: String, nickname: String?) {
+    fun sendGeohashMessage(content: String, channel: com.bitchat.android.geohash.GeohashChannel, myPeerID: String, nickname: String?, type: com.bitchat.android.model.BitchatMessageType = com.bitchat.android.model.BitchatMessageType.Message) {
         viewModelScope.launch {
             try {
                 val tempId = "temp_${System.currentTimeMillis()}_${kotlin.random.Random.nextInt(1000)}"
@@ -107,6 +107,7 @@ class GeohashViewModel(
                     id = tempId,
                     sender = nickname ?: myPeerID,
                     content = content,
+                    type = type,
                     timestamp = Date(),
                     isRelay = false,
                     senderPeerID = "geohash:${channel.geohash}",
