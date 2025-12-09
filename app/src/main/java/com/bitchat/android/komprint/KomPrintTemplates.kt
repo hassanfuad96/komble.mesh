@@ -69,6 +69,44 @@ object KomPrintTemplates {
         return sb.toString()
     }
 
+    fun formatMainEReceiptForPrinter(order: KomPrintPayload, printer: com.bitchat.android.printer.SavedPrinter): String {
+        val df = java.text.DecimalFormat("0.00")
+        val orderId = order.order.orderId
+        val url = "https://wa.komers.io/order/$orderId"
+        val total = order.order.products.fold(0.0) { acc, p -> acc + ((p.price ?: 0.0) * p.qty) }
+        val is80 = order.paperWidth >= 72
+        val cols = if (is80) 42 else 32
+        val line = "-".repeat(cols)
+        val itemSize = printer.eReceiptItemSize?.ifBlank { null } ?: "big"
+        val totalSize = printer.eReceiptTotalSize?.ifBlank { null } ?: itemSize
+        val headerSize = printer.eReceiptHeaderSize?.ifBlank { null } ?: "big"
+        val bodySize = printer.eReceiptBodySize?.ifBlank { null } ?: "normal"
+        val qrSize = (printer.qrModuleSize ?: 10).coerceIn(1,16)
+        val sb = StringBuilder()
+        sb.append("[C]<font size='${headerSize}'><b>E-RECEIPT</b></font>\n")
+        sb.append("[C]<font size='${bodySize}'>Order#: $orderId</font>\n")
+        sb.append("[C]$line\n")
+        sb.append("[C]Items:\n")
+        order.order.products.forEach { p ->
+            val left = p.name
+            val right = df.format(p.price ?: 0.0)
+            sb.append("[L]<font size='${itemSize}'><b>$left x${p.qty}</b></font>[R]<font size='${itemSize}'><b>$right</b></font>\n")
+        }
+        sb.append("[C]$line\n")
+        sb.append("[C]<font size='${totalSize}'><b>Total: ${df.format(total)}</b></font>\n")
+        sb.append("[C]$line\n")
+        sb.append("[C]<font size='${bodySize}'>Scan for full receipt</font>\n")
+        sb.append("$line\n")
+        sb.append("[C]<qrcode size='${qrSize}'>$url</qrcode>\n")
+        sb.append("\n")
+        sb.append("[C]<font size='${bodySize}'>Or visit:</font>\n")
+        sb.append("[C]<font size='${bodySize}'>$url</font>\n")
+        sb.append("\n")
+        sb.append("[C]<font size='${bodySize}'>Thank you!</font>\n")
+        sb.append("[C]<font size='${bodySize}'>Powered by Komers.io</font>\n")
+        return sb.toString()
+    }
+
     fun composeWithHeaderFooter(
         printer: EscPosPrinter?,
         headerBase64: String?,

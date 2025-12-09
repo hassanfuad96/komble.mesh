@@ -17,6 +17,15 @@ data class SavedPrinter(
     val initHex: String? = null,
     val cutterHex: String? = null,
     val drawerHex: String? = null,
+    val eReceiptItemSize: String? = null,
+    val eReceiptTotalSize: String? = null,
+    val eReceiptHeaderSize: String? = null,
+    val eReceiptBodySize: String? = null,
+    val qrModuleSize: Int? = null,
+    val stationHeaderSize: String? = null,
+    val stationItemSize: String? = null,
+    val stationNoteSize: String? = null,
+    val stationBold: Boolean? = null,
     // Per-printer category selection
     val selectedCategoryIds: List<Int>? = null, // include 0 for "All"
     val uncategorizedSelected: Boolean? = null,
@@ -112,6 +121,39 @@ class PrinterSettingsManager(context: Context) {
         val target = if (role == "main" || role == "station") role else null
         val updated = getPrinters().map { p ->
             if (p.id == id) p.copy(role = target) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterEReceiptFontSizes(id: String, itemSize: String?, totalSize: String?) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(eReceiptItemSize = itemSize, eReceiptTotalSize = totalSize) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterEReceiptOtherSizes(id: String, headerSize: String?, bodySize: String?) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(eReceiptHeaderSize = headerSize, eReceiptBodySize = bodySize) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterQrModuleSize(id: String, size: Int?) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(qrModuleSize = size) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setStationFontSettings(id: String, headerSize: String?, itemSize: String?, noteSize: String?, bold: Boolean?) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(
+                stationHeaderSize = headerSize,
+                stationItemSize = itemSize,
+                stationNoteSize = noteSize,
+                stationBold = bold
+            ) else p
         }
         persistPrinters(updated)
     }

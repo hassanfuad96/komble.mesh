@@ -16,10 +16,11 @@ class EscPosPrinterClient {
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             Socket().use { socket ->
-                socket.soTimeout = 5000
+                socket.soTimeout = 10000
                 socket.connect(InetSocketAddress(host, port), 5000)
                 socket.getOutputStream().use { out ->
                     if (initBytes != null) out.write(initBytes) else writeInit(out)
+                    writeCodePage(out, 0)
                     writeLeft(out)
                     writeText(out, content)
                     if (cutterBytes != null) out.write(cutterBytes) else writeCut(out)
@@ -39,12 +40,13 @@ class EscPosPrinterClient {
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             Socket().use { socket ->
-                socket.soTimeout = 5000
+                socket.soTimeout = 10000
                 socket.connect(InetSocketAddress(host, port), 5000)
                 socket.getOutputStream().use { out ->
                     if (initBytes != null) out.write(initBytes) else writeInit(out)
+                    writeCodePage(out, 0)
                     writeCenter(out)
-                    writeText(out, "Bitchat Test Print\n")
+                    writeText(out, "Bitchat Test Print\n\n")
                     writeLeft(out)
                     writeText(out, "-----------------------------\n")
                     writeText(out, "Merchant: Connected\n")
@@ -78,10 +80,11 @@ class EscPosPrinterClient {
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             Socket().use { socket ->
-                socket.soTimeout = 5000
+                socket.soTimeout = 10000
                 socket.connect(InetSocketAddress(host, port), 5000)
                 socket.getOutputStream().use { out ->
                     if (initBytes != null) out.write(initBytes) else writeInit(out)
+                    writeCodePage(out, 0)
                     processRichContent(out, content)
                     if (cutterBytes != null) out.write(cutterBytes) else writeCut(out)
                     out.flush()
@@ -115,6 +118,10 @@ class EscPosPrinterClient {
 
     private fun writeSize(out: OutputStream, value: Int) {
         out.write(byteArrayOf(0x1D, 0x21, value.toByte())) // GS ! n character size
+    }
+
+    private fun writeCodePage(out: OutputStream, value: Int) {
+        out.write(byteArrayOf(0x1B, 0x74, value.toByte()))
     }
 
     /**

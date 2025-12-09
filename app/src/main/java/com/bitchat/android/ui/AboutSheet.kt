@@ -2,6 +2,7 @@ package com.bitchat.android.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -762,6 +764,123 @@ fun AboutSheet(
                                                             })
                                                         }
                                                     }
+                                                    if (sp.role == "station") {
+                                                        Spacer(modifier = Modifier.height(12.dp))
+                                                        Text(text = "Station Printer Font", style = MaterialTheme.typography.labelSmall)
+                                                        var stHeaderScale by remember(sp.id) {
+                                                            val s = sp.stationHeaderSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 2
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 2
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        var stItemScale by remember(sp.id) {
+                                                            val s = sp.stationItemSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 2
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 2
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        var stNoteScale by remember(sp.id) {
+                                                            val s = sp.stationNoteSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 1
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 1
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        var stBold by remember(sp.id) { mutableStateOf(sp.stationBold != false) }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Header", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = stHeaderScale.toFloat(), onValueChange = { v ->
+                                                                stHeaderScale = v.toInt().coerceIn(1,8)
+                                                                val headerName = if (stHeaderScale <= 1) "normal" else "big-${(stHeaderScale - 1)}"
+                                                                val itemName = if (stItemScale <= 1) "normal" else "big-${(stItemScale - 1)}"
+                                                                val noteName = if (stNoteScale <= 1) "normal" else "big-${(stNoteScale - 1)}"
+                                                                printerSettings.setStationFontSettings(sp.id, headerName, itemName, noteName, stBold)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(stationHeaderSize = headerName, stationItemSize = itemName, stationNoteSize = noteName, stationBold = stBold)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dotsS = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMmS = (24 * stHeaderScale).toFloat() / dotsS
+                                                            Text(String.format("×%d (≈%.1f mm)", stHeaderScale, approxMmS), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Item", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = stItemScale.toFloat(), onValueChange = { v ->
+                                                                stItemScale = v.toInt().coerceIn(1,8)
+                                                                val headerName = if (stHeaderScale <= 1) "normal" else "big-${(stHeaderScale - 1)}"
+                                                                val itemName = if (stItemScale <= 1) "normal" else "big-${(stItemScale - 1)}"
+                                                                val noteName = if (stNoteScale <= 1) "normal" else "big-${(stNoteScale - 1)}"
+                                                                printerSettings.setStationFontSettings(sp.id, headerName, itemName, noteName, stBold)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(stationHeaderSize = headerName, stationItemSize = itemName, stationNoteSize = noteName, stationBold = stBold)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dotsI = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMmI = (24 * stItemScale).toFloat() / dotsI
+                                                            Text(String.format("×%d (≈%.1f mm)", stItemScale, approxMmI), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Note", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = stNoteScale.toFloat(), onValueChange = { v ->
+                                                                stNoteScale = v.toInt().coerceIn(1,8)
+                                                                val headerName = if (stHeaderScale <= 1) "normal" else "big-${(stHeaderScale - 1)}"
+                                                                val itemName = if (stItemScale <= 1) "normal" else "big-${(stItemScale - 1)}"
+                                                                val noteName = if (stNoteScale <= 1) "normal" else "big-${(stNoteScale - 1)}"
+                                                                printerSettings.setStationFontSettings(sp.id, headerName, itemName, noteName, stBold)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(stationHeaderSize = headerName, stationItemSize = itemName, stationNoteSize = noteName, stationBold = stBold)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dotsN = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMmN = (24 * stNoteScale).toFloat() / dotsN
+                                                            Text(String.format("×%d (≈%.1f mm)", stNoteScale, approxMmN), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Text("Bold", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Switch(checked = stBold, onCheckedChange = { v ->
+                                                                stBold = v
+                                                                val headerName = if (stHeaderScale <= 1) "normal" else "big-${(stHeaderScale - 1)}"
+                                                                val itemName = if (stItemScale <= 1) "normal" else "big-${(stItemScale - 1)}"
+                                                                val noteName = if (stNoteScale <= 1) "normal" else "big-${(stNoteScale - 1)}"
+                                                                printerSettings.setStationFontSettings(sp.id, headerName, itemName, noteName, stBold)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(stationHeaderSize = headerName, stationItemSize = itemName, stationNoteSize = noteName, stationBold = stBold)
+                                                            })
+                                                        }
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(top = 6.dp)
+                                                                .border(BorderStroke(1.dp, accentGreen), RoundedCornerShape(6.dp))
+                                                                .padding(8.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Text("Station Preview", style = MaterialTheme.typography.labelSmall)
+                                                            val hSp = (12.sp * stHeaderScale)
+                                                            val iSp = (12.sp * stItemScale)
+                                                            val nSp = (12.sp * stNoteScale)
+                                                            val bWeight = if (stBold) FontWeight.Bold else FontWeight.Normal
+                                                            Text("Hot Kitchen", fontSize = hSp, fontWeight = bWeight, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                                            Divider(color = accentGreen.copy(alpha = 0.5f))
+                                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                Text("Nasi Goreng", fontSize = iSp, fontWeight = bWeight)
+                                                                Text("x2", fontSize = iSp, fontWeight = bWeight)
+                                                            }
+                                                            Text("Note: extra spicy", fontSize = nSp, fontWeight = bWeight)
+                                                            Divider(color = accentGreen.copy(alpha = 0.5f))
+                                                        }
+                                                    }
                                                     // Role selector: Main vs Station
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         val role = sp.role ?: "station"
@@ -795,6 +914,146 @@ fun AboutSheet(
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                                     )
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text(text = "Main E‑Receipt Font", style = MaterialTheme.typography.labelSmall)
+                                                        var itemScale by remember(sp.id) {
+                                                            val s = sp.eReceiptItemSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 2
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 2
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        var totalScale by remember(sp.id) {
+                                                            val s = sp.eReceiptTotalSize ?: sp.eReceiptItemSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> itemScale
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> itemScale
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        val toSizeName: (Int) -> String = { scale -> if (scale <= 1) "normal" else "big-${(scale - 1)}" }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Items", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = itemScale.toFloat(), onValueChange = { v ->
+                                                                itemScale = v.toInt().coerceIn(1,8)
+                                                                val itemName = toSizeName(itemScale)
+                                                                val totalName = toSizeName(totalScale)
+                                                                printerSettings.setPrinterEReceiptFontSizes(sp.id, itemName, totalName)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(eReceiptItemSize = itemName, eReceiptTotalSize = totalName)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dots = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMm = (24 * itemScale).toFloat() / dots
+                                                            Text(String.format("×%d (≈%.1f mm)", itemScale, approxMm), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Total", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = totalScale.toFloat(), onValueChange = { v ->
+                                                                totalScale = v.toInt().coerceIn(1,8)
+                                                                val itemName = toSizeName(itemScale)
+                                                                val totalName = toSizeName(totalScale)
+                                                                printerSettings.setPrinterEReceiptFontSizes(sp.id, itemName, totalName)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(eReceiptItemSize = itemName, eReceiptTotalSize = totalName)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dots = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMm = (24 * totalScale).toFloat() / dots
+                                                            Text(String.format("×%d (≈%.1f mm)", totalScale, approxMm), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        var headerScale by remember(sp.id) {
+                                                            val s = sp.eReceiptHeaderSize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 2
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 2
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        var bodyScale by remember(sp.id) {
+                                                            val s = sp.eReceiptBodySize
+                                                            val f = when {
+                                                                s.isNullOrBlank() -> 1
+                                                                s.equals("normal", true) -> 1
+                                                                s.equals("big", true) -> 2
+                                                                s.startsWith("big-", true) -> (s.substringAfter("big-").toIntOrNull() ?: 1) + 1
+                                                                else -> 1
+                                                            }
+                                                            mutableStateOf(f.coerceIn(1,8))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Header", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = headerScale.toFloat(), onValueChange = { v ->
+                                                                headerScale = v.toInt().coerceIn(1,8)
+                                                                val headerName = toSizeName(headerScale)
+                                                                val bodyName = toSizeName(bodyScale)
+                                                                printerSettings.setPrinterEReceiptOtherSizes(sp.id, headerName, bodyName)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(eReceiptHeaderSize = headerName, eReceiptBodySize = bodyName)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dotsH = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMmH = (24 * headerScale).toFloat() / dotsH
+                                                            Text(String.format("×%d (≈%.1f mm)", headerScale, approxMmH), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Body", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = bodyScale.toFloat(), onValueChange = { v ->
+                                                                bodyScale = v.toInt().coerceIn(1,8)
+                                                                val headerName = toSizeName(headerScale)
+                                                                val bodyName = toSizeName(bodyScale)
+                                                                printerSettings.setPrinterEReceiptOtherSizes(sp.id, headerName, bodyName)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(eReceiptHeaderSize = headerName, eReceiptBodySize = bodyName)
+                                                            }, valueRange = 1f..8f, steps = 6, modifier = Modifier.weight(1f))
+                                                            val dotsB = (sp.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                                            val approxMmB = (24 * bodyScale).toFloat() / dotsB
+                                                            Text(String.format("×%d (≈%.1f mm)", bodyScale, approxMmB), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        var qrSize by remember(sp.id) { mutableIntStateOf((sp.qrModuleSize ?: 10).coerceIn(1,16)) }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("QR", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = qrSize.toFloat(), onValueChange = { v ->
+                                                                qrSize = v.toInt().coerceIn(1,16)
+                                                                printerSettings.setPrinterQrModuleSize(sp.id, qrSize)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(qrModuleSize = qrSize)
+                                                            }, valueRange = 1f..16f, steps = 14, modifier = Modifier.weight(1f))
+                                                            Text(String.format("%d", qrSize), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(top = 6.dp)
+                                                                .border(BorderStroke(1.dp, accentGreen), RoundedCornerShape(6.dp))
+                                                                .padding(8.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Text("Preview", style = MaterialTheme.typography.labelSmall)
+                                                            val itemSp = (12.sp * itemScale)
+                                                            val totalSp = (12.sp * totalScale)
+                                                            val headerSp = (12.sp * headerScale)
+                                                            val bodySp = (12.sp * bodyScale)
+                                                            Text("E-RECEIPT", fontSize = headerSp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                                            Divider(color = accentGreen.copy(alpha = 0.5f))
+                                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                Text("Item x1", fontSize = itemSp, fontWeight = FontWeight.Bold)
+                                                                Text("12.34", fontSize = itemSp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                            Divider(color = accentGreen.copy(alpha = 0.5f))
+                                                            Text("Total: 12.34", fontSize = totalSp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                                            Divider(color = accentGreen.copy(alpha = 0.5f))
+                                                            Text("Scan for full receipt", fontSize = bodySp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                                            Text(String.format("QR size %d", qrSize), fontSize = bodySp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                                        }
+                                                    }
                                                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                                                         val narrow = maxWidth < 360.dp
                                                         if (narrow) {
@@ -830,6 +1089,25 @@ fun AboutSheet(
                                                                             AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "escpos_test", success = ok))
                                                                         }
                                                                     }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            try {
+                                                                                val sample = "[C]KomBLE.mesh RawBT Test\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n"
+                                                                                val intent = android.content.Intent("ru.a402d.rawbtprinter.action.PRINT_RAWBT").apply {
+                                                                                    setPackage("ru.a402d.rawbtprinter")
+                                                                                    putExtra("ru.a402d.rawbtprinter.extra.DATA", sample)
+                                                                                }
+                                                                                context.startActivity(intent)
+                                                                                lastTestMessage = "RawBT intent sent"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "rawbt_test", success = true))
+                                                                            } catch (t: Throwable) {
+                                                                                lastTestMessage = "RawBT test failed: ${t.message}"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "rawbt_test", success = false))
+                                                                            }
+                                                                            isTesting = false
+                                                                        }
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "RawBT Test", fontFamily = FontFamily.Monospace) }
                                                                 }
                                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                                     OutlinedButton(onClick = { confirmDeleteId = sp.id }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete"); Text("Delete", fontFamily = FontFamily.Monospace) } }
@@ -879,6 +1157,25 @@ fun AboutSheet(
                                                                             AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "escpos_test", success = ok))
                                                                         }
                                                                     }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "ESC/POS Test", fontFamily = FontFamily.Monospace) }
+                                                                    Button(enabled = !isTesting, onClick = {
+                                                                        isTesting = true
+                                                                        coroutineScope.launch {
+                                                                            try {
+                                                                                val sample = "[C]KomBLE.mesh RawBT Test\n[C]------------------------------\n[L]Hello from KomBLE.mesh\n"
+                                                                                val intent = android.content.Intent("ru.a402d.rawbtprinter.action.PRINT_RAWBT").apply {
+                                                                                    setPackage("ru.a402d.rawbtprinter")
+                                                                                    putExtra("ru.a402d.rawbtprinter.extra.DATA", sample)
+                                                                                }
+                                                                                context.startActivity(intent)
+                                                                                lastTestMessage = "RawBT intent sent"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "rawbt_test", success = true))
+                                                                            } catch (t: Throwable) {
+                                                                                lastTestMessage = "RawBT test failed: ${t.message}"
+                                                                                AppDatabaseHelper(context).insertPrintLog(PrintLog(printerId = sp.id, host = sp.host, port = sp.port, label = sp.label, type = "rawbt_test", success = false))
+                                                                            }
+                                                                            isTesting = false
+                                                                        }
+                                                                    }, colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.Black)) { Text(if (isTesting) "Testing…" else "RawBT Test", fontFamily = FontFamily.Monospace) }
                                                                 }
                                                                 OutlinedButton(onClick = { confirmDeleteId = sp.id }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete"); Text("Delete", fontFamily = FontFamily.Monospace) } }
                                                                 if (sp.id != defaultPrinterId) {

@@ -104,26 +104,32 @@ object PrinterManager {
         val sb = StringBuilder()
         if (printer.role == "station") {
             val dt = formatDisplayDate(order.createdAt)
-            appendLineIfNotBlank(sb, "[C]Order: <font size='big'><b> #${order.orderId}</b></font>")
-            appendLineIfNotBlank(sb, "[C]Table: <font size='big'><b> ${order.tableNumber ?: "N/A"}</b></font>")
-            appendLineIfNotBlank(sb, "Note:<font size='big'><b> ${order.globalNote ?: ""}</b></font>")
-            appendLineIfNotBlank(sb, "Delivery:<font size='big'><b> ${order.deliveryMethod}</b></font>")
+            val headerSize = printer.stationHeaderSize?.ifBlank { null } ?: "big"
+            val itemSize = printer.stationItemSize?.ifBlank { null } ?: "big"
+            val noteSize = printer.stationNoteSize?.ifBlank { null } ?: "normal"
+            val boldOn = printer.stationBold != false
+            val bStart = if (boldOn) "<b>" else ""
+            val bEnd = if (boldOn) "</b>" else ""
+            appendLineIfNotBlank(sb, "[C]Order: <font size='${headerSize}'>${bStart} #${order.orderId}${bEnd}</font>")
+            appendLineIfNotBlank(sb, "[C]Table: <font size='${headerSize}'>${bStart} ${order.tableNumber ?: "N/A"}${bEnd}</font>")
+            appendLineIfNotBlank(sb, "Note:<font size='${headerSize}'>${bStart} ${order.globalNote ?: ""}${bEnd}</font>")
+            appendLineIfNotBlank(sb, "Delivery:<font size='${headerSize}'>${bStart} ${order.deliveryMethod}${bEnd}</font>")
             appendLineIfNotBlank(sb, dt?.let { "Printed at: $it" })
             val widthMm = (printer.paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
             val is80 = widthMm >= 72
             val line = "-".repeat(if (is80) 42 else 32)
             sb.append("[C]$line\n")
-    
+
             val grouped = filtered.groupBy { it.categoryId?.toIntOrNull() }
             grouped.forEach { (idInt, groupItems) ->
                 val catName = CategoriesApiService.getCategoryName(categories, idInt)
-                sb.append("[C]<font size='big'><b>${catName}</b></font>\n")
+                sb.append("[C]<font size='${headerSize}'>${bStart}${catName}${bEnd}</font>\n")
                 sb.append("[C]$line\n")
                 groupItems.forEach { item ->
                     val variant = item.variant?.let { " ($it)" } ?: ""
-                    sb.append("[L]<font size='big'><b>${item.name}$variant</b></font>[R]<font size='big'><b>x${item.quantity}</b></font>\n")
+                    sb.append("[L]<font size='${itemSize}'>${bStart}${item.name}$variant${bEnd}</font>[R]<font size='${itemSize}'>${bStart}x${item.quantity}${bEnd}</font>\n")
                     if (!item.note.isNullOrBlank()) {
-                        sb.append("  <b>Note: ${item.note}</b>\n")
+                        sb.append("  <font size='${noteSize}'>${bStart}Note: ${item.note}${bEnd}</font>\n")
                     }
                 }
                 sb.append("[C]$line\n")

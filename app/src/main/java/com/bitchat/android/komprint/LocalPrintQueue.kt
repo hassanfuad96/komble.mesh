@@ -89,11 +89,11 @@ object LocalPrintQueue {
                         } catch (_: Exception) { }
                     }
                     var anyOk = false
-                    // Main printers: print E-RECEIPT using Komers URL QR template
-                    val receiptContent = KomPrintTemplates.formatMainEReceipt(parsed)
+                    // Main printers: print E-RECEIPT per printer settings
                     mains.forEach { p ->
                         try {
-                            val okMain = PrinterManager.printOrder(context, p, receiptContent, dto)
+                            val content = KomPrintTemplates.formatMainEReceiptForPrinter(parsed, p)
+                            val okMain = PrinterManager.printOrder(context, p, content, dto)
                             db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_main", okMain))
                             if (okMain) anyOk = true
                         } catch (_: Exception) { db.insertPrintLog(com.bitchat.android.db.PrintLog(p.id, p.host, p.port, "order=" + dto.orderId + "|printer=" + (p.label ?: ""), "komprint_main", false)) }
