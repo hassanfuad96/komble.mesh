@@ -26,6 +26,10 @@ data class SavedPrinter(
     val stationItemSize: String? = null,
     val stationNoteSize: String? = null,
     val stationBold: Boolean? = null,
+    // Logo image settings
+    val logoBase64: String? = null,
+    val logoWidthPercent: Int? = null,
+    val logoInvert: Boolean? = null,
     // Per-printer category selection
     val selectedCategoryIds: List<Int>? = null, // include 0 for "All"
     val uncategorizedSelected: Boolean? = null,
@@ -121,6 +125,28 @@ class PrinterSettingsManager(context: Context) {
         val target = if (role == "main" || role == "station") role else null
         val updated = getPrinters().map { p ->
             if (p.id == id) p.copy(role = target) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterLogo(id: String, base64Png: String?) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(logoBase64 = base64Png) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterLogoWidthPercent(id: String, percent: Int?) {
+        val clamped = percent?.coerceIn(10, 100)
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(logoWidthPercent = clamped) else p
+        }
+        persistPrinters(updated)
+    }
+
+    fun setPrinterLogoInvert(id: String, enabled: Boolean) {
+        val updated = getPrinters().map { p ->
+            if (p.id == id) p.copy(logoInvert = enabled) else p
         }
         persistPrinters(updated)
     }

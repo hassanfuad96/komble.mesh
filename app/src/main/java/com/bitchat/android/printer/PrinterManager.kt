@@ -226,6 +226,20 @@ object PrinterManager {
                                     val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
                                     if (initBytes != null) connected.write(initBytes)
                                 } catch (_: Exception) { }
+                                try {
+                                    val b64 = printer.logoBase64
+                                    if (!b64.isNullOrBlank()) {
+                                        val dpm = (printer.dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                                        val pct = (printer.logoWidthPercent ?: 100).coerceIn(10, 100)
+                                        val widthDots = widthMm * dpm * pct / 100
+                                        val raster = EscPosPrinterClient.renderImageBytesFromBase64(b64, widthDots, invert = (printer.logoInvert == true))
+                                        if (raster != null) {
+                                            connected.write(byteArrayOf(0x1B, 0x61, 0x01))
+                                            connected.write(raster)
+                                            connected.write(byteArrayOf(0x1B, 0x61, 0x00))
+                                        }
+                                    }
+                                } catch (_: Exception) { }
                                 escpos.printFormattedText(content)
                                 // Add a couple of newlines to advance paper slightly
                                 escpos.printFormattedText("[C]\n[C]\n")
@@ -252,10 +266,15 @@ object PrinterManager {
                     try {
                         val initBytes = EscPosUtils.parseHexCsv(printer.initHex)
                         val cutterBytes = EscPosUtils.parseHexCsv(printer.cutterHex)
-                        EscPosPrinterClient().printRichText(
+                        EscPosPrinterClient().printRichTextWithLogo(
                             host = printer.host,
                             port = printer.port,
                             content = content + "\n\n",
+                            logoBase64 = printer.logoBase64,
+                            paperWidthMm = printer.paperWidthMm,
+                            dotsPerMm = printer.dotsPerMm,
+                            logoWidthPercent = printer.logoWidthPercent,
+                            logoInvert = printer.logoInvert,
                             initBytes = initBytes,
                             cutterBytes = cutterBytes
                         )

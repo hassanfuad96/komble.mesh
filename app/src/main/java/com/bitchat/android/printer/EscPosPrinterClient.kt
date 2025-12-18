@@ -1,5 +1,8 @@
 package com.bitchat.android.printer
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -318,5 +321,143 @@ class EscPosPrinterClient {
         }
     }
 
-    companion object { const val DEFAULT_PORT = 9100 }
+    companion object {
+        const val DEFAULT_PORT = 9100
+        fun renderImageBytesFromBase64(base64Png: String, targetWidthDots: Int, invert: Boolean = false): ByteArray? {
+            return try {
+                val bytes = Base64.decode(base64Png, Base64.DEFAULT)
+                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+                val wDots = targetWidthDots.coerceAtLeast(8)
+                val scale = wDots.toFloat() / bmp.width.toFloat()
+                val h = (bmp.height * scale).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(bmp, wDots, h, true)
+                val bytesPerRow = (wDots + 7) / 8
+                val data = ByteArray(bytesPerRow * h)
+                var idx = 0
+                for (y in 0 until h) {
+                    var bitPos = 0
+                    var current = 0
+                    for (x in 0 until wDots) {
+                        val px = scaled.getPixel(x, y)
+                        val a = (px ushr 24) and 0xFF
+                        val r = (px shr 16) and 0xFF
+                        val g = (px shr 8) and 0xFF
+                        val b = px and 0xFF
+                        val rC = (r * a + 255 * (255 - a)) / 255
+                        val gC = (g * a + 255 * (255 - a)) / 255
+                        val bC = (b * a + 255 * (255 - a)) / 255
+                        val lum = (rC * 299 + gC * 587 + bC * 114) / 1000
+                        val isBlack = if (invert) lum >= 128 else lum < 128
+                        current = current shl 1
+                        if (isBlack) current = current or 1
+                        bitPos++
+                        if (bitPos == 8) {
+                            data[idx++] = current.toByte()
+                            bitPos = 0
+                            current = 0
+                        }
+                    }
+                    if (bitPos != 0) {
+                        current = current shl (8 - bitPos)
+                        data[idx++] = current.toByte()
+                    }
+                }
+                val xL = (bytesPerRow and 0xFF).toByte()
+                val xH = ((bytesPerRow shr 8) and 0xFF).toByte()
+                val yL = (h and 0xFF).toByte()
+                val yH = ((h shr 8) and 0xFF).toByte()
+                val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
+                header + data
+            } catch (_: Exception) { null }
+        }
+    }
+    suspend fun printRichTextWithLogo(
+        host: String,
+        port: Int = DEFAULT_PORT,
+        content: String,
+        logoBase64: String?,
+        paperWidthMm: Int?,
+        dotsPerMm: Int?,
+        logoWidthPercent: Int?,
+        logoInvert: Boolean?,
+        initBytes: ByteArray? = null,
+        cutterBytes: ByteArray? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            Socket().use { socket ->
+                socket.soTimeout = 10000
+                socket.connect(InetSocketAddress(host, port), 5000)
+                socket.getOutputStream().use { out ->
+                    if (initBytes != null) out.write(initBytes) else writeInit(out)
+                    writeCodePage(out, 0)
+                    val b64 = logoBase64
+                    if (!b64.isNullOrBlank()) {
+                        val mm = (paperWidthMm ?: PrinterSettingsManager.DEFAULT_PAPER_WIDTH_MM)
+                        val dpm = (dotsPerMm ?: PrinterSettingsManager.DEFAULT_DOTS_PER_MM)
+                        val pct = (logoWidthPercent ?: 100).coerceIn(10, 100)
+                        val widthDots = (mm * dpm * pct) / 100
+                        val raster = renderImageBytesFromBase64(b64, widthDots, invert = (logoInvert == true))
+                        if (raster != null) {
+                            writeCenter(out)
+                            out.write(raster)
+                        }
+                    }
+                    processRichContent(out, content)
+                    if (cutterBytes != null) out.write(cutterBytes) else writeCut(out)
+                    out.flush()
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun renderImageBytesFromBase64Internal(base64Png: String, targetWidthDots: Int): ByteArray? {
+        return try {
+            val bytes = Base64.decode(base64Png, Base64.DEFAULT)
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+            buildRasterBytes(bmp, targetWidthDots)
+        } catch (_: Exception) { null }
+    }
+
+    private fun buildRasterBytes(src: Bitmap, targetWidthDots: Int): ByteArray {
+        val wDots = targetWidthDots.coerceAtLeast(8)
+        val scale = wDots.toFloat() / src.width.toFloat()
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(src, wDots, h, true)
+        val bytesPerRow = (wDots + 7) / 8
+        val data = ByteArray(bytesPerRow * h)
+        var idx = 0
+        for (y in 0 until h) {
+            var bitPos = 0
+            var current = 0
+            for (x in 0 until wDots) {
+                val px = scaled.getPixel(x, y)
+                val r = (px shr 16) and 0xFF
+                val g = (px shr 8) and 0xFF
+                val b = px and 0xFF
+                val lum = (r * 299 + g * 587 + b * 114) / 1000
+                val isBlack = lum < 128
+                current = current shl 1
+                if (isBlack) current = current or 1
+                bitPos++
+                if (bitPos == 8) {
+                    data[idx++] = current.toByte()
+                    bitPos = 0
+                    current = 0
+                }
+            }
+            if (bitPos != 0) {
+                current = current shl (8 - bitPos)
+                data[idx++] = current.toByte()
+            }
+        }
+        val xL = (bytesPerRow and 0xFF).toByte()
+        val xH = ((bytesPerRow shr 8) and 0xFF).toByte()
+        val yL = (h and 0xFF).toByte()
+        val yH = ((h shr 8) and 0xFF).toByte()
+        val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
+        return header + data
+    }
 }

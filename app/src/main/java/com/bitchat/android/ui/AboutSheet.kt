@@ -45,6 +45,11 @@ import com.bitchat.android.merchant.MerchantAuthManager
 import com.bitchat.android.merchant.MerchantLoginScreen
 import androidx.compose.material.icons.filled.Person
 import kotlinx.coroutines.launch
+import android.util.Base64
+import java.io.File
+import com.bitchat.android.ui.media.ImagePickerButton
+import com.bitchat.android.net.OkHttpProvider
+import okhttp3.Request
 import com.bitchat.android.printer.PrinterDiscoveryManager
 import com.bitchat.android.printer.PrinterSettingsManager
 import com.bitchat.android.printer.SavedPrinter
@@ -1027,6 +1032,73 @@ fun AboutSheet(
                                                                 if (idx >= 0) savedPrinters[idx] = sp.copy(qrModuleSize = qrSize)
                                                             }, valueRange = 1f..16f, steps = 14, modifier = Modifier.weight(1f))
                                                             Text(String.format("%d", qrSize), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        var logoWidth by remember(sp.id) { mutableIntStateOf((sp.logoWidthPercent ?: 100).coerceIn(10,100)) }
+                                                        var logoUrl by remember(sp.id) { mutableStateOf("") }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Logo", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            ImagePickerButton(modifier = Modifier, onImageReady = { path ->
+                                                                try {
+                                                                    val bytes = File(path).readBytes()
+                                                                    val b64 = Base64.encodeToString(bytes, Base64.DEFAULT)
+                                                                    printerSettings.setPrinterLogo(sp.id, b64)
+                                                                    val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                    if (idx >= 0) savedPrinters[idx] = sp.copy(logoBase64 = b64)
+                                                                    lastTestMessage = "Logo set from gallery"
+                                                                } catch (_: Exception) {
+                                                                    lastTestMessage = "Failed to set logo"
+                                                                }
+                                                            })
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            OutlinedButton(onClick = {
+                                                                coroutineScope.launch {
+                                                                    try {
+                                                                        val req = Request.Builder().url(logoUrl).build()
+                                                                        val resp = OkHttpProvider.httpClient().newCall(req).execute()
+                                                                        val bytes = resp.body?.bytes()
+                                                                        if (resp.isSuccessful && bytes != null) {
+                                                                            val b64 = Base64.encodeToString(bytes, Base64.DEFAULT)
+                                                                            printerSettings.setPrinterLogo(sp.id, b64)
+                                                                            val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                            if (idx >= 0) savedPrinters[idx] = sp.copy(logoBase64 = b64)
+                                                                            lastTestMessage = "Logo set from URL"
+                                                                        } else {
+                                                                            lastTestMessage = "Logo URL failed"
+                                                                        }
+                                                                    } catch (_: Exception) {
+                                                                        lastTestMessage = "Logo URL failed"
+                                                                    }
+                                                                }
+                                                            }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text("Save URL", fontFamily = FontFamily.Monospace) }
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Width", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            Slider(value = logoWidth.toFloat(), onValueChange = { v ->
+                                                                logoWidth = v.toInt().coerceIn(10,100)
+                                                                printerSettings.setPrinterLogoWidthPercent(sp.id, logoWidth)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(logoWidthPercent = logoWidth)
+                                                            }, valueRange = 10f..100f, steps = 90, modifier = Modifier.weight(1f))
+                                                            Text(String.format("%d%%", logoWidth), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp))
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Text("Invert", fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp))
+                                                            var invert by remember(sp.id) { mutableStateOf(sp.logoInvert == true) }
+                                                            Switch(checked = invert, onCheckedChange = { v ->
+                                                                invert = v
+                                                                printerSettings.setPrinterLogoInvert(sp.id, v)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(logoInvert = v)
+                                                            })
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            OutlinedTextField(value = logoUrl, onValueChange = { logoUrl = it }, modifier = Modifier.weight(1f), label = { Text("Logo URL", fontFamily = FontFamily.Monospace) })
+                                                            OutlinedButton(onClick = {
+                                                                printerSettings.setPrinterLogo(sp.id, null)
+                                                                val idx = savedPrinters.indexOfFirst { it.id == sp.id }
+                                                                if (idx >= 0) savedPrinters[idx] = sp.copy(logoBase64 = null)
+                                                                lastTestMessage = "Logo cleared"
+                                                            }, colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen), border = BorderStroke(1.dp, accentGreen)) { Text("Clear Logo", fontFamily = FontFamily.Monospace) }
                                                         }
                                                         Column(
                                                             modifier = Modifier
